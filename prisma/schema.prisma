@@ -1,0 +1,253 @@
+generator client {
+    provider        = "prisma-client-js"
+    previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+    provider  = "postgresql"
+    url       = env("DATABASE_URL")
+    directUrl = env("DIRECT_URL")
+}
+
+enum WorkspaceRole {
+    ADMIN
+    MEMBER
+}
+
+enum TaskStatus {
+    TODO
+    IN_PROGRESS
+    DONE
+}
+
+enum TaskType {
+    TASK
+    BUG
+    FEATURE
+    IMPROVEMENT
+    OTHER
+}
+
+enum ProjectStatus {
+    ACTIVE
+    PLANNING
+    COMPLETED
+    ON_HOLD
+    CANCELLED
+}
+
+enum Priority {
+    LOW
+    MEDIUM
+    HIGH
+}
+
+model User {
+    id        String   @id
+    name      String
+    email     String   @unique
+    image     String   @default("")
+    passwordHash String?
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    workspaces      WorkspaceMember[]
+    projects        Project[]         @relation("ProjectOwner")
+    taskAssignments TaskAssignee[]
+    comments        Comment[]
+    ownedWorkspaces Workspace[]
+    ProjectMember   ProjectMember[]
+    groupMemberships GroupMember[]
+    groupMessages   GroupMessage[]
+    attendances     Attendance[]
+}
+
+model Workspace {
+    id          String   @id
+    name        String
+    slug        String   @unique
+    description String?
+    settings    Json     @default("{}")
+    ownerId     String
+    createdAt   DateTime @default(now())
+    image_url   String   @default("")
+    updatedAt   DateTime @updatedAt
+
+    members  WorkspaceMember[]
+    projects Project[]
+    groups   Group[]
+    notifications Notification[]
+    attendances Attendance[]
+    owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model WorkspaceMember {
+    id          String        @id @default(uuid())
+    userId      String
+    workspaceId String
+    message     String        @default("")
+    role        WorkspaceRole @default(MEMBER)
+    user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+    workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, workspaceId]) // prevent duplicate membership
+}
+
+model Project {
+    id          String          @id @default(uuid())
+    name        String
+    description String?
+    priority    Priority        @default(MEDIUM)
+    status      ProjectStatus   @default(ACTIVE)
+    start_date  DateTime?
+    end_date    DateTime?
+    team_lead   String
+    workspaceId String
+    progress    Int             @default(0)
+    createdAt   DateTime        @default(now())
+    updatedAt   DateTime        @updatedAt
+    members     ProjectMember[]
+    groups      ProjectGroup[]
+
+    owner     User      @relation("ProjectOwner", fields: [team_lead], references: [id], onDelete: Cascade)
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    tasks     Task[]
+}
+
+model ProjectMember {
+    id        String  @id @default(uuid())
+    userId    String
+    projectId String
+    user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, projectId]) // prevent duplicate membership
+}
+
+model Task {
+    id          String     @id @default(uuid())
+    projectId   String
+    title       String
+    description String?
+    status      TaskStatus @default(TODO)
+    type        TaskType   @default(TASK)
+    priority    Priority   @default(MEDIUM)
+    due_date    DateTime
+    createdAt   DateTime   @default(now())
+    updatedAt   DateTime   @updatedAt
+
+    project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    assignees TaskAssignee[]
+    comments Comment[]
+    groups   TaskGroup[]
+}
+
+model TaskAssignee {
+    id     String @id @default(uuid())
+    taskId String
+    userId String
+
+    task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([taskId, userId])
+}
+
+model Comment {
+    id        String   @id @default(uuid())
+    content   String
+    userId    String
+    taskId    String
+    createdAt DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+    task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model Group {
+    id          String   @id @default(uuid())
+    name        String
+    workspaceId String
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    members   GroupMember[]
+    projects  ProjectGroup[]
+    tasks     TaskGroup[]
+    messages  GroupMessage[]
+
+    @@unique([workspaceId, name])
+}
+
+model GroupMember {
+    id      String @id @default(uuid())
+    groupId String
+    userId  String
+
+    group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+    user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([groupId, userId])
+}
+
+model ProjectGroup {
+    id        String @id @default(uuid())
+    projectId String
+    groupId   String
+
+    project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    group   Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+    @@unique([projectId, groupId])
+}
+
+model TaskGroup {
+    id      String @id @default(uuid())
+    taskId  String
+    groupId String
+
+    task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+    group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+    @@unique([taskId, groupId])
+}
+
+model GroupMessage {
+    id        String   @id @default(uuid())
+    groupId   String
+    userId    String
+    content   String
+    createdAt DateTime @default(now())
+
+    group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+    user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+    id           String   @id @default(uuid())
+    workspaceId  String
+    title        String
+    subtitle     String?
+    buttonName   String?
+    buttonUrl    String?
+    openInNewTab Boolean  @default(false)
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Attendance {
+    id          String   @id @default(uuid())
+    workspaceId String
+    userId      String
+    date        DateTime
+    imageUrl    String
+    createdAt   DateTime @default(now())
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([workspaceId, userId, date])
+}
