@@ -24,10 +24,12 @@ DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=strongpassword
 
-# SMTP (optional but recommended for invitations)
-SMTP_USER=your_smtp_user
-SMTP_PASS=your_smtp_password
-SENDER_EMAIL=your_sender_email
+# SMTP (AWS SES recommended for invitations)
+SMTP_HOST=email-smtp.us-east-1.amazonaws.com
+SMTP_PORT=587
+SMTP_USER=your_ses_smtp_user
+SMTP_PASS=your_ses_smtp_password
+SENDER_EMAIL=your_verified_sender_email
 
 # Cloudinary (attendance uploads)
 CLOUDINARY_CLOUD_NAME=your_cloud_name
@@ -38,6 +40,7 @@ Notes:
 - DATABASE_URL is used by Prisma and the app.
 - DIRECT_URL is required by the Prisma Neon adapter.
 - If SMTP variables are not set, email sending will fail for invitations.
+- For AWS SES, use the SMTP credentials from the SES console and a verified sender email.
 
 ## Install & Run (Local)
 1) Install dependencies
