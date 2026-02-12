@@ -1,4 +1,4 @@
-import prisma from "../configs/prisma.js";
+import { prisma, pool } from "../configs/prisma.js";
 import cloudinary from "../configs/cloudinary.js";
 
 const ensureAdmin = (req, res) => {

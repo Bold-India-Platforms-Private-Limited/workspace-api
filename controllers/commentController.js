@@ -1,4 +1,4 @@
-import prisma from "../configs/prisma.js";
+import { prisma, pool } from "../configs/prisma.js";
 
 // Add comment
 export const addComment = async (req, res) => {

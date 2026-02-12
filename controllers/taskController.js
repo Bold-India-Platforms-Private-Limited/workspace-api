@@ -1,4 +1,4 @@
-import prisma from "../configs/prisma.js";
+import { prisma, pool } from "../configs/prisma.js";
 import sendEmail from "../configs/nodemailer.js";
 
 // Create task

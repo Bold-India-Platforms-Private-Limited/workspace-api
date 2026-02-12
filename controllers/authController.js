@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import prisma from "../configs/prisma.js";
+import { prisma, pool } from "../configs/prisma.js";
 
 const signToken = (user, role) => {
     if (!process.env.JWT_SECRET) {
