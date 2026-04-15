@@ -129,6 +129,57 @@ export const getAttendanceByDate = async (req, res) => {
     }
 };
 
+// Returns two lists (admin only):
+//   neverAttended  — members with zero attendance records in this workspace
+//   absentToday    — members who have not marked attendance today (IST-aware)
+export const getAbsentLists = async (req, res) => {
+    try {
+        if (!ensureAdmin(req, res)) return;
+        const { workspaceId } = req.query;
+        if (!workspaceId) {
+            return res.status(400).json({ message: "workspaceId is required" });
+        }
+
+        // All workspace members
+        const members = await prisma.workspaceMember.findMany({
+            where: { workspaceId },
+            include: { user: { select: { id: true, name: true, email: true } } },
+        });
+
+        // Today's bounds in IST (server computes IST date to stay consistent with markAttendance)
+        const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+        const nowInIST = new Date(Date.now() + IST_OFFSET_MS);
+        const todayDateStr = nowInIST.toISOString().substring(0, 10); // "YYYY-MM-DD"
+        const { start: todayStart, end: todayEnd } = getDayBounds(new Date(todayDateStr));
+
+        // All attendance records for this workspace — fetch once, filter in-memory
+        const allAttendances = await prisma.attendance.findMany({
+            where: { workspaceId },
+            select: { userId: true, date: true },
+        });
+
+        const everAttended = new Set(allAttendances.map((a) => a.userId));
+        const attendedToday = new Set(
+            allAttendances
+                .filter((a) => a.date >= todayStart && a.date <= todayEnd)
+                .map((a) => a.userId)
+        );
+
+        const neverAttended = members
+            .filter((m) => !everAttended.has(m.userId))
+            .map((m) => ({ id: m.userId, name: m.user.name, email: m.user.email }));
+
+        const absentToday = members
+            .filter((m) => !attendedToday.has(m.userId))
+            .map((m) => ({ id: m.userId, name: m.user.name, email: m.user.email }));
+
+        res.json({ neverAttended, absentToday, todayDate: todayDateStr });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.code || error.message });
+    }
+};
+
 export const deleteAttendanceByDates = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;

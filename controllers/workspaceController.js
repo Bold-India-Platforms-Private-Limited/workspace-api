@@ -423,6 +423,110 @@ export const importProjects = async (req, res) => {
     }
 };
 
+// Regenerate login credentials for a workspace member
+export const regenerateCredentials = async (req, res) => {
+    try {
+        const requesterId = req.user?.id;
+        const { workspaceId, userId } = req.params;
+        const origin = req.get('origin');
+
+        const workspace = await prisma.workspace.findUnique({
+            where: { id: workspaceId },
+            include: { members: { include: { user: true } } },
+        });
+
+        if (!workspace) {
+            return res.status(404).json({ message: "Workspace not found" });
+        }
+
+        const isAdmin = workspace.members.some(
+            (m) => m.userId === requesterId && m.role === "ADMIN"
+        );
+
+        if (!isAdmin) {
+            return res.status(403).json({ message: "Only admins can regenerate credentials" });
+        }
+
+        const member = workspace.members.find((m) => m.userId === userId);
+        if (!member) {
+            return res.status(404).json({ message: "Member not found in this workspace" });
+        }
+
+        const tempPassword = crypto.randomBytes(3).toString("hex");
+        const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+        await prisma.user.update({
+            where: { id: userId },
+            data: { passwordHash },
+        });
+
+        await sendEmail({
+            to: member.user.email,
+            subject: "Your Login Credentials Have Been Reset",
+            body: `
+                <div style="max-width: 600px;">
+                    <a href="${origin || ""}" style="background-color: #007bff; padding: 12px 24px; border-radius: 5px; color: #fff; font-weight: 600; font-size: 16px; text-decoration: none; display: inline-block; margin-bottom: 16px;">
+                        Go To Workspace
+                    </a>
+                    <h2>Your credentials for ${workspace.name} have been reset</h2>
+                    <p>Your new login credentials:</p>
+                    <p><strong>Email:</strong> ${member.user.email}</p>
+                    <p><strong>New Password:</strong> ${tempPassword}</p>
+                    <p>Please login and change your password after first login.</p>
+                </div>
+            `,
+        });
+
+        res.json({ message: "Credentials regenerated and sent to user's email" });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.code || error.message });
+    }
+};
+
+// Search workspace member by email
+export const searchMemberByEmail = async (req, res) => {
+    try {
+        const requesterId = req.user?.id;
+        const { workspaceId } = req.params;
+        const { email } = req.query;
+
+        if (!email) {
+            return res.status(400).json({ message: "email query param is required" });
+        }
+
+        const workspace = await prisma.workspace.findUnique({
+            where: { id: workspaceId },
+            include: { members: { include: { user: true } } },
+        });
+
+        if (!workspace) {
+            return res.status(404).json({ message: "Workspace not found" });
+        }
+
+        const isAdmin = workspace.members.some(
+            (m) => m.userId === requesterId && m.role === "ADMIN"
+        );
+
+        if (!isAdmin) {
+            return res.status(403).json({ message: "Only admins can search members" });
+        }
+
+        const match = workspace.members.find(
+            (m) => m.user?.email?.toLowerCase() === String(email).trim().toLowerCase()
+        );
+
+        if (!match) {
+            return res.status(404).json({ message: "No member found with that email" });
+        }
+
+        res.json({ member: match });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.code || error.message });
+    }
+};
+
 export const deleteWorkspace = async (req, res) => {
     try {
         const userId = req.user?.id;
