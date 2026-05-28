@@ -4,6 +4,9 @@ import crypto from "crypto";
 import sendEmail from "../configs/nodemailer.js";
 import { invalidateWorkspaceCache } from "../configs/redis.js";
 
+// Safe user select — never exposes mobile, passwordHash, or lastLoginAt
+const safeUser = { select: { id: true, name: true, email: true, image: true } };
+
 // Create project
 export const createProject = async (req, res) => {
     try {
@@ -13,7 +16,7 @@ export const createProject = async (req, res) => {
         //check if user has admin role for workspace
         const workspace = await prisma.workspace.findUnique({
             where: { id: workspaceId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!workspace) {
@@ -56,8 +59,8 @@ export const createProject = async (req, res) => {
         const projectWithMembers = await prisma.project.findUnique({
             where: { id: project.id },
             include: {
-                members: { include: { user: true } },
-                tasks: { include: { assignees: { include: { user: true } }, groups: { select: { groupId: true } } } },
+                members: { include: { user: safeUser } },
+                tasks: { include: { assignees: { include: { user: safeUser } }, groups: { select: { groupId: true } } } },
                 owner: true,
                 groups: { include: { group: { select: { id: true, members: { select: { userId: true } } } } } }
             }
@@ -81,7 +84,7 @@ export const updateProject = async (req, res) => {
         // check if user has admin role for workspace
         const workspace = await prisma.workspace.findUnique({
             where: { id: workspaceId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!workspace) {
@@ -150,7 +153,7 @@ export const addMember = async (req, res) => {
         // Check if user is project lead
         const project = await prisma.project.findUnique({
             where: { id: projectId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!project ) {

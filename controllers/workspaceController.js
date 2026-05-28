@@ -5,6 +5,9 @@ import sendEmail from "../configs/nodemailer.js";
 import cloudinary from "../configs/cloudinary.js";
 import { cacheGet, cacheSet, cacheDel, invalidateWorkspaceCache } from "../configs/redis.js";
 
+// Safe user select — never exposes mobile, passwordHash, or lastLoginAt to non-admin responses
+const safeUser = { select: { id: true, name: true, email: true, image: true } };
+
 // Get all workspaces for user
 export const getUserWorkspaces = async (req, res) => {
     try {
@@ -22,17 +25,17 @@ export const getUserWorkspaces = async (req, res) => {
                 members: { some: { userId: userId } }
             },
             include: {
-                members: { include: { user: true } },
-                groups: { include: { members: { include: { user: true } } } },
+                members: { include: { user: safeUser } },
+                groups: { include: { members: { include: { user: safeUser } } } },
                 projects: {
                     include: {
                         tasks: {
                             include: {
-                                assignees: { include: { user: true } },
+                                assignees: { include: { user: safeUser } },
                                 groups: { select: { groupId: true } }
                             }
                         },
-                        members: { include: { user: true } },
+                        members: { include: { user: safeUser } },
                         groups: {
                             include: {
                                 group: {
@@ -110,11 +113,11 @@ export const createWorkspace = async (req, res) => {
         const workspaceWithMembers = await prisma.workspace.findUnique({
             where: { id: workspace.id },
             include: {
-                members: { include: { user: true } },
+                members: { include: { user: safeUser } },
                 projects: {
                     include: {
-                        tasks: { include: { assignees: { include: { user: true } }, groups: { select: { groupId: true } } } },
-                        members: { include: { user: true } },
+                        tasks: { include: { assignees: { include: { user: safeUser } }, groups: { select: { groupId: true } } } },
+                        members: { include: { user: safeUser } },
                         groups: { include: { group: { select: { id: true, members: { select: { userId: true } } } } } }
                     },
                 },
@@ -145,7 +148,7 @@ export const inviteWorkspaceMember = async (req, res) => {
 
         const workspace = await prisma.workspace.findUnique({
             where: { id: workspaceId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!workspace) {
@@ -245,7 +248,7 @@ export const inviteWorkspaceMembersBulk = async (req, res) => {
 
         const workspace = await prisma.workspace.findUnique({
             where: { id: workspaceId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!workspace) {
@@ -458,7 +461,7 @@ export const regenerateCredentials = async (req, res) => {
 
         const workspace = await prisma.workspace.findUnique({
             where: { id: workspaceId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!workspace) {
@@ -524,7 +527,7 @@ export const searchMemberByEmail = async (req, res) => {
 
         const workspace = await prisma.workspace.findUnique({
             where: { id: workspaceId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!workspace) {

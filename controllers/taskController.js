@@ -2,6 +2,9 @@ import { prisma, pool } from "../configs/prisma.js";
 import sendEmail from "../configs/nodemailer.js";
 import { invalidateWorkspaceCache } from "../configs/redis.js";
 
+// Safe user select — never exposes mobile, passwordHash, or lastLoginAt
+const safeUser = { select: { id: true, name: true, email: true, image: true } };
+
 // Create task
 export const createTask = async (req, res) => {
     try {
@@ -12,7 +15,7 @@ export const createTask = async (req, res) => {
         // Check if user has admin role for project
         const project = await prisma.project.findUnique({
             where: { id: projectId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!project) {
@@ -66,8 +69,8 @@ export const createTask = async (req, res) => {
         const taskWithAssignees = await prisma.task.findUnique({
             where: { id: task.id },
             include: {
-                assignees: { include: { user: true } },
-                groups: { include: { group: { include: { members: { include: { user: true } } } } } },
+                assignees: { include: { user: safeUser } },
+                groups: { include: { group: { include: { members: { include: { user: safeUser } } } } } },
             },
         });
 
@@ -133,7 +136,7 @@ export const updateTask = async (req, res) => {
 
         const project = await prisma.project.findUnique({
             where: { id: task.projectId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!project) {
@@ -196,7 +199,7 @@ export const updateTask = async (req, res) => {
 
         const updatedWithGroups = await prisma.task.findUnique({
             where: { id: task.id },
-            include: { assignees: { include: { user: true } }, groups: { include: { group: { include: { members: { include: { user: true } } } } } } },
+            include: { assignees: { include: { user: safeUser } }, groups: { include: { group: { include: { members: { include: { user: safeUser } } } } } } },
         });
 
         await invalidateWorkspaceCache(project.workspaceId, prisma);
@@ -223,7 +226,7 @@ export const deleteTask = async (req, res) => {
 
         const project = await prisma.project.findUnique({
             where: { id: tasks[0].projectId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!project) {

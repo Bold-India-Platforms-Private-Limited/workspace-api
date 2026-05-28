@@ -1,6 +1,9 @@
 import { prisma, pool } from "../configs/prisma.js";
 import sendEmail from "../configs/nodemailer.js";
 
+// Safe user select — never exposes mobile, passwordHash, or lastLoginAt
+const safeUser = { select: { id: true, name: true, email: true, image: true } };
+
 const ensureAdmin = (req, res) => {
     if (req.user?.role !== "ADMIN") {
         res.status(403).json({ message: "Only admin can manage notifications" });
@@ -83,7 +86,7 @@ export const createNotification = async (req, res) => {
 
         const workspace = await prisma.workspace.findUnique({
             where: { id: workspaceId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (workspace?.members?.length) {

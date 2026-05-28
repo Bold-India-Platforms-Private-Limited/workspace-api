@@ -1,6 +1,9 @@
 import { prisma, pool } from "../configs/prisma.js";
 import sendEmail from "../configs/nodemailer.js";
 
+// Safe user select — never exposes mobile, passwordHash, or lastLoginAt
+const safeUser = { select: { id: true, name: true, email: true, image: true } };
+
 const ensureAdmin = (req, res) => {
     if (req.user?.role !== "ADMIN") {
         res.status(403).json({ message: "Only admin can manage groups" });
@@ -25,7 +28,7 @@ export const listGroups = async (req, res) => {
 
         const groups = await prisma.group.findMany({
             where,
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
             orderBy: { createdAt: "desc" },
         });
 
@@ -43,7 +46,7 @@ export const getGroup = async (req, res) => {
 
         const group = await prisma.group.findUnique({
             where: { id },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!group) {
@@ -125,7 +128,7 @@ export const createGroup = async (req, res) => {
 
         const groupWithMembers = await prisma.group.findUnique({
             where: { id: group.id },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         res.json({ group: groupWithMembers, message: "Group created successfully" });
@@ -191,7 +194,7 @@ export const updateGroupMembers = async (req, res) => {
 
         const updatedGroup = await prisma.group.findUnique({
             where: { id },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         res.json({ group: updatedGroup, message: "Group updated successfully" });
@@ -261,7 +264,7 @@ export const listGroupMessages = async (req, res) => {
 
         const messages = await prisma.groupMessage.findMany({
             where: { groupId: id },
-            include: { user: true },
+            include: { user: safeUser },
             orderBy: { createdAt: "asc" },
         });
 
@@ -302,7 +305,7 @@ export const createGroupMessage = async (req, res) => {
                 userId,
                 content: String(content).trim(),
             },
-            include: { user: true },
+            include: { user: safeUser },
         });
 
         res.json({ message });

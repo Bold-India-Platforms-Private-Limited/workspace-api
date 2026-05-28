@@ -2,6 +2,9 @@ import { prisma, pool } from "../configs/prisma.js";
 import cloudinary from "../configs/cloudinary.js";
 import sendEmail from "../configs/nodemailer.js";
 
+// Safe user select — never exposes mobile, passwordHash, or lastLoginAt
+const safeUser = { select: { id: true, name: true, email: true, image: true } };
+
 const ensureAdmin = (req, res) => {
     if (req.user?.role !== "ADMIN") {
         res.status(403).json({ message: "Only admin can manage attendance" });
@@ -108,12 +111,12 @@ export const getAttendanceByDate = async (req, res) => {
 
         const members = await prisma.workspaceMember.findMany({
             where: { workspaceId },
-            include: { user: true },
+            include: { user: safeUser },
         });
 
         const entries = await prisma.attendance.findMany({
             where: { workspaceId, date: { gte: start, lte: end } },
-            include: { user: true },
+            include: { user: safeUser },
         });
 
         const entryMap = new Map(entries.map((e) => [e.userId, e]));

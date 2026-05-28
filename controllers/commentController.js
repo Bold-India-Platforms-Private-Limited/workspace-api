@@ -1,5 +1,8 @@
 import { prisma, pool } from "../configs/prisma.js";
 
+// Safe user select — never exposes mobile, passwordHash, or lastLoginAt
+const safeUser = { select: { id: true, name: true, email: true, image: true } };
+
 // Add comment
 export const addComment = async (req, res) => {
     try {
@@ -17,7 +20,7 @@ export const addComment = async (req, res) => {
         
         const project = await prisma.project.findUnique({
             where: { id: task.projectId },
-            include: { members: { include: { user: true } } },
+            include: { members: { include: { user: safeUser } } },
         });
 
         if (!project) {
@@ -38,7 +41,7 @@ export const addComment = async (req, res) => {
             }
         }
 
-        const comment = await prisma.comment.create({ data: { taskId, content, userId }, include: { user: true } });
+        const comment = await prisma.comment.create({ data: { taskId, content, userId }, include: { user: safeUser } });
         
         res.json({comment});
     } catch (error) {
@@ -67,7 +70,7 @@ export const getTaskComments = async (req, res) => {
             }
         }
 
-        const comments = await prisma.comment.findMany({ where: { taskId }, include: { user: true } });
+        const comments = await prisma.comment.findMany({ where: { taskId }, include: { user: safeUser } });
         res.json({ comments });
     } catch (error) {
         console.log(error);
