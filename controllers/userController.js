@@ -65,7 +65,7 @@ export const neverLoggedIn = async (req, res) => {
     }
 };
 
-// GET /api/users/team?workspaceId=xxx — admin: all members with mobile + login status
+// GET /api/users/team?workspaceId=xxx — admin: all members with mobile, login status, groups
 export const getTeam = async (req, res) => {
     try {
         if (req.user?.role !== "ADMIN") return res.status(403).json({ message: "Admin only" });
@@ -77,7 +77,14 @@ export const getTeam = async (req, res) => {
             where: { workspaceId },
             include: {
                 user: {
-                    select: { id: true, name: true, email: true, mobile: true, image: true, lastLoginAt: true, createdAt: true },
+                    select: {
+                        id: true, name: true, email: true, mobile: true,
+                        image: true, lastLoginAt: true, createdAt: true,
+                        groupMemberships: {
+                            include: { group: { select: { id: true, name: true } } },
+                            where: { group: { workspaceId } },
+                        },
+                    },
                 },
             },
             orderBy: { createdAt: "asc" },
@@ -89,7 +96,7 @@ export const getTeam = async (req, res) => {
             memberSince: m.createdAt,
             hasLoggedIn: !!m.user.lastLoginAt,
             hasMobile: !!m.user.mobile,
-            // WhatsApp prefilled link — opens chat with admin message
+            groups: m.user.groupMemberships.map((gm) => ({ id: gm.group.id, name: gm.group.name })),
             whatsappLink: m.user.mobile
                 ? `https://wa.me/${m.user.mobile}?text=Hi%20${encodeURIComponent(m.user.name)}%2C%20this%20is%20a%20message%20from%20your%20workspace%20admin.`
                 : null,
