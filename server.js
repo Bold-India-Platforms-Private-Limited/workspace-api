@@ -12,6 +12,7 @@ import authRouter from "./routes/authRoutes.js";
 import groupRouter from "./routes/groupRoutes.js";
 import notificationRouter from "./routes/notificationRoutes.js";
 import attendanceRouter from "./routes/attendanceRoutes.js";
+import noticeRouter from "./routes/noticeRoutes.js";
 import { protect } from "./middlewares/authMiddleware.js";
 
 const app = express();
@@ -78,6 +79,7 @@ app.use("/api/comments", protect, commentRouter);
 app.use("/api/groups", protect, groupRouter);
 app.use("/api/notifications", protect, notificationRouter);
 app.use("/api/attendance", protect, attendanceRouter);
+app.use("/api/notices", protect, noticeRouter);
 
 initRedis();
 

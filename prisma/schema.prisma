@@ -77,6 +77,7 @@ model Workspace {
     projects Project[]
     groups   Group[]
     notifications Notification[]
+    notices     Notice[]
     attendances Attendance[]
     owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 }
@@ -234,6 +235,27 @@ model Notification {
     openInNewTab Boolean  @default(false)
     createdAt    DateTime @default(now())
     updatedAt    DateTime @updatedAt
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+enum NoticeType {
+    INFO
+    WARNING
+    SUCCESS
+    DANGER
+}
+
+model Notice {
+    id          String     @id @default(uuid())
+    workspaceId String
+    title       String
+    content     String
+    type        NoticeType @default(INFO)
+    published   Boolean    @default(false)
+    priority    Int        @default(0)
+    createdAt   DateTime   @default(now())
+    updatedAt   DateTime   @updatedAt
 
     workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }

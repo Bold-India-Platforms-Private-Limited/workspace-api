@@ -1,5 +1,6 @@
 import { prisma, pool } from "../configs/prisma.js";
 import cloudinary from "../configs/cloudinary.js";
+import sendEmail from "../configs/nodemailer.js";
 
 const ensureAdmin = (req, res) => {
     if (req.user?.role !== "ADMIN") {
@@ -174,6 +175,90 @@ export const getAbsentLists = async (req, res) => {
             .map((m) => ({ id: m.userId, name: m.user.name, email: m.user.email }));
 
         res.json({ neverAttended, absentToday, todayDate: todayDateStr });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.code || error.message });
+    }
+};
+
+export const sendAttendanceReminder = async (req, res) => {
+    try {
+        if (!ensureAdmin(req, res)) return;
+        const { workspaceId, type, customMessage } = req.body;
+
+        if (!workspaceId || !type) {
+            return res.status(400).json({ message: "workspaceId and type are required" });
+        }
+        if (!["neverAttended", "absentToday", "both"].includes(type)) {
+            return res.status(400).json({ message: "type must be neverAttended, absentToday, or both" });
+        }
+
+        const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } });
+        if (!workspace) return res.status(404).json({ message: "Workspace not found" });
+
+        const members = await prisma.workspaceMember.findMany({
+            where: { workspaceId },
+            include: { user: { select: { id: true, name: true, email: true } } },
+        });
+
+        const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+        const nowInIST = new Date(Date.now() + IST_OFFSET_MS);
+        const todayDateStr = nowInIST.toISOString().substring(0, 10);
+        const { start: todayStart, end: todayEnd } = getDayBounds(new Date(todayDateStr));
+
+        const allAttendances = await prisma.attendance.findMany({
+            where: { workspaceId },
+            select: { userId: true, date: true },
+        });
+
+        const everAttended = new Set(allAttendances.map((a) => a.userId));
+        const attendedToday = new Set(
+            allAttendances.filter((a) => a.date >= todayStart && a.date <= todayEnd).map((a) => a.userId)
+        );
+
+        let targets = [];
+        if (type === "neverAttended") {
+            targets = members.filter((m) => !everAttended.has(m.userId)).map((m) => m.user);
+        } else if (type === "absentToday") {
+            targets = members.filter((m) => !attendedToday.has(m.userId)).map((m) => m.user);
+        } else {
+            const ids = new Set([
+                ...members.filter((m) => !everAttended.has(m.userId)).map((m) => m.userId),
+                ...members.filter((m) => !attendedToday.has(m.userId)).map((m) => m.userId),
+            ]);
+            targets = members.filter((m) => ids.has(m.userId)).map((m) => m.user);
+        }
+
+        if (targets.length === 0) {
+            return res.json({ sent: 0, message: "No users to remind." });
+        }
+
+        const extra = customMessage ? `<p style="margin-top:12px;color:#444;">${customMessage}</p>` : "";
+        let sent = 0;
+        const errors = [];
+
+        for (const user of targets) {
+            try {
+                await sendEmail({
+                    to: user.email,
+                    subject: `[${workspace.name}] Attendance Reminder`,
+                    body: `
+                        <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;">
+                            <h2 style="color:#1d4ed8;margin-bottom:8px;">Attendance Reminder</h2>
+                            <p>Hi <strong>${user.name}</strong>,</p>
+                            <p>This is a reminder that your attendance has not been marked${type === "neverAttended" ? " — you have never checked in" : " today"} in the <strong>${workspace.name}</strong> workspace.</p>
+                            ${extra}
+                            <p style="margin-top:20px;color:#888;font-size:12px;">Please mark your attendance at your earliest convenience.</p>
+                        </div>
+                    `,
+                });
+                sent++;
+            } catch (err) {
+                errors.push({ email: user.email, error: err.message });
+            }
+        }
+
+        res.json({ sent, total: targets.length, errors: errors.length > 0 ? errors : undefined });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
