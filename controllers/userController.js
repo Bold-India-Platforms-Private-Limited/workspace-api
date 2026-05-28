@@ -1,5 +1,7 @@
 import { prisma } from "../configs/prisma.js";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
+import sendEmail from "../configs/nodemailer.js";
 
 // GET /api/users/me — return own profile (mobile, lastLoginAt etc.)
 export const getMe = async (req, res) => {
@@ -120,18 +122,55 @@ export const getTeam = async (req, res) => {
 };
 
 // POST /api/users/reset-password — admin resets a member's password
+// Body: { userId, newPassword? }
+//   - if newPassword provided → set that password (manual mode)
+//   - if newPassword omitted  → auto-generate 10-char password and email it
 export const resetMemberPassword = async (req, res) => {
     try {
         if (req.user?.role !== "ADMIN") return res.status(403).json({ message: "Admin only" });
-        const { userId, newPassword } = req.body;
-        if (!userId || !newPassword) {
-            return res.status(400).json({ message: "userId and newPassword are required" });
-        }
-        if (newPassword.length < 6) {
+        const { userId, workspaceId, newPassword } = req.body;
+        if (!userId) return res.status(400).json({ message: "userId is required" });
+
+        const member = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, name: true, email: true },
+        });
+        if (!member) return res.status(404).json({ message: "User not found" });
+
+        // Determine password
+        const isAuto = !newPassword;
+        const password = isAuto
+            ? crypto.randomBytes(5).toString("hex") // 10-char hex
+            : newPassword;
+
+        if (!isAuto && password.length < 6) {
             return res.status(400).json({ message: "Password must be at least 6 characters" });
         }
-        const hash = await bcrypt.hash(newPassword, 10);
+
+        const hash = await bcrypt.hash(password, 10);
         await prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
+
+        if (isAuto) {
+            await sendEmail({
+                to: member.email,
+                subject: "Your Workspace Password Has Been Reset",
+                body: `
+                    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:8px;">
+                        <h2 style="color:#1d4ed8;margin-bottom:8px;">Password Reset</h2>
+                        <p>Hi <strong>${member.name}</strong>,</p>
+                        <p>Your workspace login password has been reset by the admin.</p>
+                        <div style="background:#f3f4f6;border-radius:6px;padding:16px;margin:16px 0;text-align:center;">
+                            <p style="margin:0;font-size:12px;color:#6b7280;">New Password</p>
+                            <p style="margin:4px 0 0;font-size:22px;font-weight:700;letter-spacing:2px;color:#111827;">${password}</p>
+                        </div>
+                        <p style="color:#6b7280;font-size:13px;">Please log in and change your password immediately.</p>
+                        <p style="color:#6b7280;font-size:13px;">— Bluestock Fintech Admin</p>
+                    </div>
+                `,
+            });
+            return res.json({ message: `Password reset and emailed to ${member.email}` });
+        }
+
         res.json({ message: "Password reset successfully" });
     } catch (error) {
         res.status(500).json({ message: error.message });

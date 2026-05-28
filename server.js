@@ -15,6 +15,7 @@ import attendanceRouter from "./routes/attendanceRoutes.js";
 import noticeRouter from "./routes/noticeRoutes.js";
 import standupRouter from "./routes/standupRoutes.js";
 import userRouter from "./routes/userRoutes.js";
+import leaveRouter from "./routes/leaveRoutes.js";
 import { protect } from "./middlewares/authMiddleware.js";
 
 const app = express();
@@ -84,6 +85,7 @@ app.use("/api/attendance", protect, attendanceRouter);
 app.use("/api/notices", protect, noticeRouter);
 app.use("/api/standup", protect, standupRouter);
 app.use("/api/users", protect, userRouter);
+app.use("/api/leave", protect, leaveRouter);
 
 initRedis();
 

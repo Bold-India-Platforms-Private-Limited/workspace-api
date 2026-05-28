@@ -63,6 +63,7 @@ model User {
     groupMessages   GroupMessage[]
     attendances     Attendance[]
     standups        StandupEntry[]
+    leaveRequests   LeaveRequest[]
 }
 
 model Workspace {
@@ -80,9 +81,10 @@ model Workspace {
     projects Project[]
     groups   Group[]
     notifications Notification[]
-    notices     Notice[]
-    attendances Attendance[]
-    standups    StandupEntry[]
+    notices       Notice[]
+    attendances   Attendance[]
+    standups      StandupEntry[]
+    leaveRequests LeaveRequest[]
     owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 }
 
@@ -276,6 +278,36 @@ model Attendance {
     user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@unique([workspaceId, userId, date])
+}
+
+enum LeaveType {
+    LEAVE
+    WORK_FROM_HOME
+    HALF_DAY
+}
+
+enum LeaveStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
+model LeaveRequest {
+    id          String      @id @default(uuid())
+    workspaceId String
+    userId      String
+    startDate   DateTime
+    endDate     DateTime
+    type        LeaveType
+    reason      String
+    status      LeaveStatus @default(PENDING)
+    adminNote   String?
+    reviewedAt  DateTime?
+    createdAt   DateTime    @default(now())
+    updatedAt   DateTime    @updatedAt
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 enum StandupType {
