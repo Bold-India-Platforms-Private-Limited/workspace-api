@@ -70,12 +70,31 @@ export const updateNotice = async (req, res) => {
                 ...(title !== undefined && { title }),
                 ...(content !== undefined && { content }),
                 ...(type !== undefined && { type }),
-                ...(published !== undefined && { published }),
-                ...(priority !== undefined && { priority }),
+                ...(published !== undefined && { published: published === true || published === "true" }),
+                ...(priority !== undefined && { priority: Number(priority) }),
             },
         });
 
         res.json({ notice });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+export const publishNotice = async (req, res) => {
+    try {
+        if (!ensureAdmin(req, res)) return;
+        const { id } = req.params;
+
+        const existing = await prisma.notice.findUnique({ where: { id } });
+        if (!existing) return res.status(404).json({ message: "Notice not found" });
+
+        const notice = await prisma.notice.update({
+            where: { id },
+            data: { published: !existing.published },
+        });
+
+        res.json({ notice, published: notice.published });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

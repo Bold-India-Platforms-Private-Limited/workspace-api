@@ -57,8 +57,10 @@ export const login = async (req, res) => {
             return res.status(401).json({ message: "Invalid credentials" });
         }
 
+        await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+
         const token = signToken(user, "MEMBER");
-        res.json({ token, user, role: "MEMBER" });
+        res.json({ token, user: { ...user, lastLoginAt: new Date() }, role: "MEMBER" });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });

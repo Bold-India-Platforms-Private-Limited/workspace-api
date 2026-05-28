@@ -43,13 +43,15 @@ enum Priority {
 }
 
 model User {
-    id        String   @id
-    name      String
-    email     String   @unique
-    image     String   @default("")
+    id           String    @id
+    name         String
+    email        String    @unique
+    image        String    @default("")
     passwordHash String?
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+    mobile       String?
+    lastLoginAt  DateTime?
+    createdAt    DateTime  @default(now())
+    updatedAt    DateTime  @updatedAt
 
     workspaces      WorkspaceMember[]
     projects        Project[]         @relation("ProjectOwner")
@@ -60,6 +62,7 @@ model User {
     groupMemberships GroupMember[]
     groupMessages   GroupMessage[]
     attendances     Attendance[]
+    standups        StandupEntry[]
 }
 
 model Workspace {
@@ -79,6 +82,7 @@ model Workspace {
     notifications Notification[]
     notices     Notice[]
     attendances Attendance[]
+    standups    StandupEntry[]
     owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 }
 
@@ -272,4 +276,31 @@ model Attendance {
     user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@unique([workspaceId, userId, date])
+}
+
+enum StandupType {
+    SOFTWARE_DEV
+    DATA_ANALYSIS
+    BRAINSTORM
+    DESIGN
+    TESTING
+    DOCUMENTATION
+    MEETING
+    OTHER
+}
+
+model StandupEntry {
+    id          String      @id @default(uuid())
+    workspaceId String
+    userId      String
+    taskId      String?
+    title       String
+    type        StandupType
+    description String
+    date        DateTime
+    createdAt   DateTime    @default(now())
+    updatedAt   DateTime    @updatedAt
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

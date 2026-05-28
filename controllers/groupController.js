@@ -12,13 +12,19 @@ const ensureAdmin = (req, res) => {
 export const listGroups = async (req, res) => {
     try {
         const { workspaceId } = req.query;
+        const { id: userId, role } = req.user;
 
         if (!workspaceId) {
             return res.status(400).json({ message: "workspaceId is required" });
         }
 
+        // ADMIN sees all groups; MEMBER sees only their own groups
+        const where = role === "ADMIN"
+            ? { workspaceId }
+            : { workspaceId, members: { some: { userId } } };
+
         const groups = await prisma.group.findMany({
-            where: { workspaceId },
+            where,
             include: { members: { include: { user: true } } },
             orderBy: { createdAt: "desc" },
         });
@@ -33,6 +39,8 @@ export const listGroups = async (req, res) => {
 export const getGroup = async (req, res) => {
     try {
         const { id } = req.params;
+        const { id: userId, role } = req.user;
+
         const group = await prisma.group.findUnique({
             where: { id },
             include: { members: { include: { user: true } } },
@@ -40,6 +48,12 @@ export const getGroup = async (req, res) => {
 
         if (!group) {
             return res.status(404).json({ message: "Group not found" });
+        }
+
+        // MEMBER can only access groups they belong to
+        if (role !== "ADMIN") {
+            const isMember = group.members.some((m) => m.userId === userId);
+            if (!isMember) return res.status(403).json({ message: "Access denied" });
         }
 
         res.json({ group });
