@@ -18,8 +18,8 @@ Create a `.env` file in the project root with the following (example values for 
 
 PORT=5000
 JWT_SECRET=your_jwt_secret
-DATABASE_URL=postgresql://devteam:RiseRise4050@13.201.126.92:5432/29JanDB?sslmode=disable
-DIRECT_URL=postgresql://devteam:RiseRise4050@13.201.126.92:5432/29JanDB?sslmode=disable
+DATABASE_URL=
+DIRECT_URL=
 
 # Admin bootstrap login
 ADMIN_EMAIL=admin@example.com
@@ -63,12 +63,6 @@ The API runs on http://localhost:5000 by default.
 
 ## How to verify tables in AWS PGAdmin
 
-1. Open PGAdmin and connect to your AWS database using:
-   - Host: 13.201.126.92
-   - Port: 5432
-   - Username: devteam
-   - Password: RiseRise4050
-   - Database: 29JanDB
 
 2. Expand the database tree and navigate to `Schemas > public > Tables` to see all tables created by Prisma migrations.
 
