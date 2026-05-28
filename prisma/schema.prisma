@@ -64,6 +64,7 @@ model User {
     attendances     Attendance[]
     standups        StandupEntry[]
     leaveRequests   LeaveRequest[]
+    submissions     Submission[]
 }
 
 model Workspace {
@@ -85,6 +86,7 @@ model Workspace {
     attendances   Attendance[]
     standups      StandupEntry[]
     leaveRequests LeaveRequest[]
+    submissions   Submission[]
     owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 }
 
@@ -308,6 +310,22 @@ model LeaveRequest {
 
     workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
     user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Submission {
+    id          String   @id @default(uuid())
+    workspaceId String
+    userId      String
+    driveLink   String
+    note        String?
+    adminNote   String?
+    submittedAt DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([workspaceId, userId])
 }
 
 enum StandupType {

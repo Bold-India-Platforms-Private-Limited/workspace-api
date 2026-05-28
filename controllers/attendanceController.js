@@ -268,6 +268,31 @@ export const sendAttendanceReminder = async (req, res) => {
     }
 };
 
+export const getMyAttendanceStatus = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const { workspaceId } = req.query;
+        if (!workspaceId) {
+            return res.status(400).json({ message: "workspaceId is required" });
+        }
+
+        const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+        const nowInIST = new Date(Date.now() + IST_OFFSET_MS);
+        const todayDateStr = nowInIST.toISOString().substring(0, 10);
+        const { start: todayStart, end: todayEnd } = getDayBounds(new Date(todayDateStr));
+
+        const [totalCount, todayRecord] = await Promise.all([
+            prisma.attendance.count({ where: { workspaceId, userId } }),
+            prisma.attendance.findFirst({ where: { workspaceId, userId, date: { gte: todayStart, lte: todayEnd } }, select: { id: true } }),
+        ]);
+
+        res.json({ neverAttended: totalCount === 0, markedToday: !!todayRecord });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.code || error.message });
+    }
+};
+
 export const deleteAttendanceByDates = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
