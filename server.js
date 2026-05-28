@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { initRedis } from "./configs/redis.js";
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
@@ -77,6 +78,8 @@ app.use("/api/comments", protect, commentRouter);
 app.use("/api/groups", protect, groupRouter);
 app.use("/api/notifications", protect, notificationRouter);
 app.use("/api/attendance", protect, attendanceRouter);
+
+initRedis();
 
 const PORT = process.env.PORT || 5000;
 

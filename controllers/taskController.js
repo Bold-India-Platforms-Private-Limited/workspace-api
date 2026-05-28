@@ -1,5 +1,6 @@
 import { prisma, pool } from "../configs/prisma.js";
 import sendEmail from "../configs/nodemailer.js";
+import { invalidateWorkspaceCache } from "../configs/redis.js";
 
 // Create task
 export const createTask = async (req, res) => {
@@ -107,6 +108,7 @@ export const createTask = async (req, res) => {
             ));
         }
 
+        await invalidateWorkspaceCache(project.workspaceId, prisma);
         res.json({ task: taskWithAssignees, message: "Task created successfully" });
     } catch (error) {
         console.log(error);
@@ -197,6 +199,7 @@ export const updateTask = async (req, res) => {
             include: { assignees: { include: { user: true } }, groups: { include: { group: { include: { members: { include: { user: true } } } } } } },
         });
 
+        await invalidateWorkspaceCache(project.workspaceId, prisma);
         res.json({ message: "Task updated successfully", task: updatedWithGroups });
     } catch (error) {
         console.log(error);
@@ -233,6 +236,7 @@ export const deleteTask = async (req, res) => {
             where: { id: { in: tasksIds } },
         });
 
+        await invalidateWorkspaceCache(project.workspaceId, prisma);
         res.json({ message: "Task deleted successfully" });
     } catch (error) {
         console.log(error);

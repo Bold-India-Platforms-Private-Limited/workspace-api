@@ -2,6 +2,7 @@ import { prisma, pool } from "../configs/prisma.js";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import sendEmail from "../configs/nodemailer.js";
+import { invalidateWorkspaceCache } from "../configs/redis.js";
 
 // Create project
 export const createProject = async (req, res) => {
@@ -56,12 +57,13 @@ export const createProject = async (req, res) => {
             where: { id: project.id },
             include: {
                 members: { include: { user: true } },
-                tasks: { include: { assignees: { include: { user: true } }, comments: { include: { user: true } }, groups: { include: { group: { include: { members: { include: { user: true } } } } } } } },
+                tasks: { include: { assignees: { include: { user: true } }, groups: { select: { groupId: true } } } },
                 owner: true,
-                groups: { include: { group: { include: { members: { include: { user: true } } } } } }
+                groups: { include: { group: { select: { id: true, members: { select: { userId: true } } } } } }
             }
         });
 
+        await invalidateWorkspaceCache(workspaceId, prisma);
         res.json({ project: projectWithMembers, message: "Project created successfully" });
 
     } catch (error) {
@@ -128,6 +130,7 @@ export const updateProject = async (req, res) => {
             }
         }
         
+        await invalidateWorkspaceCache(workspaceId, prisma);
         res.json({ project, message: "Project updated successfully" });
     } catch (error) {
         console.log(error);
@@ -236,6 +239,7 @@ export const addMember = async (req, res) => {
             });
         }
 
+        await invalidateWorkspaceCache(project.workspaceId, prisma);
         res.json({ member, message: "Member added successfully" });
     } catch (error) {
         console.log(error);
@@ -266,6 +270,7 @@ export const deleteProject = async (req, res) => {
             return res.status(403).json({ message: "You don't have permission to delete this project" });
         }
 
+        await invalidateWorkspaceCache(project.workspaceId, prisma);
         await prisma.project.delete({ where: { id: projectId } });
         res.json({ message: "Project deleted successfully" });
     } catch (error) {

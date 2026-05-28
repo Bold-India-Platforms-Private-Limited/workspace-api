@@ -3,11 +3,20 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import sendEmail from "../configs/nodemailer.js";
 import cloudinary from "../configs/cloudinary.js";
+import { cacheGet, cacheSet, cacheDel, invalidateWorkspaceCache } from "../configs/redis.js";
 
 // Get all workspaces for user
 export const getUserWorkspaces = async (req, res) => {
     try {
         const userId = req.user?.id;
+
+        // Serve from Redis when available — avoids the heavy DB join on every request
+        const cacheKey = `ws:user:${userId}`;
+        const cached = await cacheGet(cacheKey);
+        if (cached) {
+            return res.json({ workspaces: cached, fromCache: true });
+        }
+
         const workspaces = await prisma.workspace.findMany({
             where: {
                 members: { some: { userId: userId } }
@@ -20,17 +29,27 @@ export const getUserWorkspaces = async (req, res) => {
                         tasks: {
                             include: {
                                 assignees: { include: { user: true } },
-                                comments: { include: { user: true } },
-                                groups: { include: { group: { include: { members: { include: { user: true } } } } } }
+                                groups: { select: { groupId: true } }
                             }
                         },
                         members: { include: { user: true } },
-                        groups: { include: { group: { include: { members: { include: { user: true } } } } } }
+                        groups: {
+                            include: {
+                                group: {
+                                    select: {
+                                        id: true,
+                                        members: { select: { userId: true } }
+                                    }
+                                }
+                            }
+                        }
                     }
                 },
                 owner: true
             }
         });
+        // Cache before responding so concurrent requests also benefit
+        await cacheSet(cacheKey, workspaces);
         res.json({ workspaces });
     } catch (error) {
         console.log(error);
@@ -94,15 +113,17 @@ export const createWorkspace = async (req, res) => {
                 members: { include: { user: true } },
                 projects: {
                     include: {
-                        tasks: { include: { assignees: { include: { user: true } }, comments: { include: { user: true } }, groups: { include: { group: { include: { members: { include: { user: true } } } } } } } },
+                        tasks: { include: { assignees: { include: { user: true } }, groups: { select: { groupId: true } } } },
                         members: { include: { user: true } },
-                        groups: { include: { group: { include: { members: { include: { user: true } } } } } }
+                        groups: { include: { group: { select: { id: true, members: { select: { userId: true } } } } } }
                     },
                 },
                 owner: true,
             },
         });
 
+        // New workspace — invalidate the creator's cached list
+        await cacheDel([`ws:user:${userId}`]);
         res.json({ workspace: workspaceWithMembers, message: "Workspace created successfully" });
     } catch (error) {
         console.log(error);
@@ -202,6 +223,8 @@ export const inviteWorkspaceMember = async (req, res) => {
             });
         }
 
+        // Invalidate the whole workspace so all existing members see the new member
+        await invalidateWorkspaceCache(workspaceId, prisma);
         res.json({ member, message: "Member invited successfully" });
     } catch (error) {
         console.log(error);
@@ -303,6 +326,7 @@ export const inviteWorkspaceMembersBulk = async (req, res) => {
             invited.push(trimmed);
         }
 
+        await invalidateWorkspaceCache(workspaceId, prisma);
         res.json({ invited, message: "Invitations sent" });
     } catch (error) {
         console.log(error);
@@ -341,6 +365,7 @@ export const removeWorkspaceMembersBulk = async (req, res) => {
             where: { workspaceId, userId: { in: userIds } },
         });
 
+        await invalidateWorkspaceCache(workspaceId, prisma);
         res.json({ message: "Members removed successfully" });
     } catch (error) {
         console.log(error);
@@ -416,6 +441,7 @@ export const importProjects = async (req, res) => {
             }
         }
 
+        await invalidateWorkspaceCache(workspaceId, prisma);
         res.json({ message: "Projects imported successfully" });
     } catch (error) {
         console.log(error);
@@ -477,6 +503,7 @@ export const regenerateCredentials = async (req, res) => {
             `,
         });
 
+        await invalidateWorkspaceCache(workspaceId, prisma);
         res.json({ message: "Credentials regenerated and sent to user's email" });
     } catch (error) {
         console.log(error);
@@ -578,6 +605,8 @@ export const deleteWorkspace = async (req, res) => {
             }
         }
 
+        // Invalidate before delete so member list is still queryable
+        await invalidateWorkspaceCache(workspaceId, prisma);
         await prisma.workspace.delete({ where: { id: workspaceId } });
         res.json({ message: "Workspace deleted successfully" });
     } catch (error) {
