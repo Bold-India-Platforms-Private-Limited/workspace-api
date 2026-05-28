@@ -20,7 +20,6 @@ export const updateMobile = async (req, res) => {
         const { mobile } = req.body;
         if (!mobile) return res.status(400).json({ message: "mobile is required" });
 
-        // Basic sanity: digits only, 7–15 chars (E.164 without +)
         const cleaned = String(mobile).replace(/\D/g, "");
         if (cleaned.length < 7 || cleaned.length > 15) {
             return res.status(400).json({ message: "Enter a valid mobile number" });
@@ -55,17 +54,14 @@ export const neverLoggedIn = async (req, res) => {
             },
         });
 
-        const never = members
-            .filter((m) => !m.user.lastLoginAt)
-            .map((m) => m.user);
-
-        res.json({ count: never.length, users: never });
+        const users = members.filter((m) => !m.user.lastLoginAt).map((m) => m.user);
+        res.json({ count: users.length, users });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-// GET /api/users/team?workspaceId=xxx — admin: all members with mobile + login status + groups
+// GET /api/users/team?workspaceId=xxx — admin: all members with mobile, login status, groups
 export const getTeam = async (req, res) => {
     try {
         if (req.user?.role !== "ADMIN") return res.status(403).json({ message: "Admin only" });
@@ -85,15 +81,10 @@ export const getTeam = async (req, res) => {
             }),
             prisma.group.findMany({
                 where: { workspaceId },
-                select: {
-                    id: true,
-                    name: true,
-                    members: { select: { userId: true } },
-                },
+                select: { id: true, name: true, members: { select: { userId: true } } },
             }),
         ]);
 
-        // Build userId → groups[] map
         const userGroupMap = new Map();
         for (const group of groups) {
             for (const { userId } of group.members) {
@@ -118,9 +109,7 @@ export const getTeam = async (req, res) => {
             hasLoggedIn: !!m.user.lastLoginAt,
             hasMobile: !!m.user.mobile,
             groups: userGroupMap.get(m.user.id) || [],
-            whatsappLink: m.user.mobile
-                ? `https://wa.me/${m.user.mobile}?text=${WHATSAPP_MSG}`
-                : null,
+            whatsappLink: m.user.mobile ? `https://wa.me/${m.user.mobile}?text=${WHATSAPP_MSG}` : null,
         }));
 
         res.json({ total: users.length, users });
