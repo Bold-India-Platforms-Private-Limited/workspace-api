@@ -1,4 +1,5 @@
 import { prisma } from "../configs/prisma.js";
+import bcrypt from "bcryptjs";
 
 // GET /api/users/me — return own profile (mobile, lastLoginAt etc.)
 export const getMe = async (req, res) => {
@@ -113,6 +114,25 @@ export const getTeam = async (req, res) => {
         }));
 
         res.json({ total: users.length, users });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// POST /api/users/reset-password — admin resets a member's password
+export const resetMemberPassword = async (req, res) => {
+    try {
+        if (req.user?.role !== "ADMIN") return res.status(403).json({ message: "Admin only" });
+        const { userId, newPassword } = req.body;
+        if (!userId || !newPassword) {
+            return res.status(400).json({ message: "userId and newPassword are required" });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "Password must be at least 6 characters" });
+        }
+        const hash = await bcrypt.hash(newPassword, 10);
+        await prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
+        res.json({ message: "Password reset successfully" });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
