@@ -65,7 +65,7 @@ export const neverLoggedIn = async (req, res) => {
     }
 };
 
-// GET /api/users/team?workspaceId=xxx — admin: all members with mobile + login status
+// GET /api/users/team?workspaceId=xxx — admin: all members with mobile + login status + groups
 export const getTeam = async (req, res) => {
     try {
         if (req.user?.role !== "ADMIN") return res.status(403).json({ message: "Admin only" });
@@ -73,29 +73,57 @@ export const getTeam = async (req, res) => {
         const { workspaceId } = req.query;
         if (!workspaceId) return res.status(400).json({ message: "workspaceId is required" });
 
-        const members = await prisma.workspaceMember.findMany({
-            where: { workspaceId },
-            include: {
-                user: {
-                    select: { id: true, name: true, email: true, mobile: true, image: true, lastLoginAt: true, createdAt: true },
+        const [members, groups] = await Promise.all([
+            prisma.workspaceMember.findMany({
+                where: { workspaceId },
+                include: {
+                    user: {
+                        select: { id: true, name: true, email: true, mobile: true, image: true, lastLoginAt: true, createdAt: true },
+                    },
                 },
-            },
-            orderBy: { createdAt: "asc" },
-        });
+                orderBy: { user: { name: "asc" } },
+            }),
+            prisma.group.findMany({
+                where: { workspaceId },
+                select: {
+                    id: true,
+                    name: true,
+                    members: { select: { userId: true } },
+                },
+            }),
+        ]);
 
-        const team = members.map((m) => ({
-            ...m.user,
+        // Build userId → groups[] map
+        const userGroupMap = new Map();
+        for (const group of groups) {
+            for (const { userId } of group.members) {
+                if (!userGroupMap.has(userId)) userGroupMap.set(userId, []);
+                userGroupMap.get(userId).push({ id: group.id, name: group.name });
+            }
+        }
+
+        const WHATSAPP_MSG = encodeURIComponent(
+            "Hi! This is a reminder from your workspace admin at Bluestock Fintech. Please log in and check your tasks."
+        );
+
+        const users = members.map((m) => ({
+            id: m.user.id,
+            name: m.user.name,
+            email: m.user.email,
+            image: m.user.image,
+            mobile: m.user.mobile || null,
             role: m.role,
-            memberSince: m.createdAt,
+            memberSince: m.user.createdAt,
+            lastLoginAt: m.user.lastLoginAt || null,
             hasLoggedIn: !!m.user.lastLoginAt,
             hasMobile: !!m.user.mobile,
-            // WhatsApp prefilled link — opens chat with admin message
+            groups: userGroupMap.get(m.user.id) || [],
             whatsappLink: m.user.mobile
-                ? `https://wa.me/${m.user.mobile}?text=Hi%20${encodeURIComponent(m.user.name)}%2C%20this%20is%20a%20message%20from%20your%20workspace%20admin.`
+                ? `https://wa.me/${m.user.mobile}?text=${WHATSAPP_MSG}`
                 : null,
         }));
 
-        res.json({ total: team.length, team });
+        res.json({ total: users.length, users });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
