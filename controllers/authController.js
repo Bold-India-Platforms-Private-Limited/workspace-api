@@ -137,11 +137,16 @@ export const requestNewPassword = async (req, res) => {
             return res.status(404).json({ message: "This email is not registered in our system" });
         }
 
-        // Generate a readable random password: 3 segments of 4 chars each
+        // Generate a short memorable password: 2 lowercase letters + 4 digits  e.g. gk9833
+        const letters = "abcdefghjkmnpqrstuvwxyz"; // no l/i/o to avoid confusion
+        const digits  = "0123456789";
+        const randLetter = (b) => letters[b % letters.length];
+        const randDigit  = (b) => digits[b % digits.length];
+        const rb = crypto.randomBytes(6);
         const newPassword =
-            crypto.randomBytes(3).toString("hex") + "-" +
-            crypto.randomBytes(3).toString("hex") + "-" +
-            crypto.randomBytes(2).toString("hex");
+            randLetter(rb[0]) + randLetter(rb[1]) +
+            randDigit(rb[2])  + randDigit(rb[3]) +
+            randDigit(rb[4])  + randDigit(rb[5]);
 
         const passwordHash = await bcrypt.hash(newPassword, 10);
         await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
@@ -166,8 +171,7 @@ export const requestNewPassword = async (req, res) => {
                         <p style="margin:0;font-size:13px;color:#64748b;margin-bottom:6px;">Your new password</p>
                         <p style="margin:0;font-size:22px;font-weight:700;letter-spacing:2px;color:#1e293b;font-family:monospace;">${newPassword}</p>
                     </div>
-                    <p style="color:#ef4444;font-size:13px;">Please log in and change this password immediately from your Settings page.</p>
-                    <div style="margin-top:16px;padding:12px 16px;background:#fffbeb;border-radius:8px;border-left:4px solid #f59e0b;">
+<div style="margin-top:16px;padding:12px 16px;background:#fffbeb;border-radius:8px;border-left:4px solid #f59e0b;">
                         <p style="margin:0;font-size:12px;color:#92400e;">
                             📬 <strong>Can't find this email?</strong> Check your <strong>Spam</strong> or <strong>Promotions</strong> folder.
                             If found there, please mark it as <em>"Not Spam"</em> so future emails reach your inbox directly.
