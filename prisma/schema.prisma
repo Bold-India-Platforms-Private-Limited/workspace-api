@@ -154,7 +154,8 @@ model Task {
     id          String     @id @default(uuid())
     projectId   String
     title       String
-    description String?
+    description     String?
+    descriptionType String  @default("text")   // "text" | "html"
     status      TaskStatus @default(TODO)
     type        TaskType   @default(TASK)
     priority    Priority   @default(MEDIUM)

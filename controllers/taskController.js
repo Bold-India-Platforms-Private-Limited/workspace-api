@@ -9,7 +9,7 @@ const safeUser = { select: { id: true, name: true, email: true, image: true } };
 export const createTask = async (req, res) => {
     try {
         const userId = req.user?.id;
-        const { projectId, title, description, type, status, priority, due_date, groupIds, assigneeIds } = req.body;
+        const { projectId, title, description, descriptionType, type, status, priority, due_date, groupIds, assigneeIds } = req.body;
         const origin = req.get('origin');
 
         // Check if user has admin role for project
@@ -30,6 +30,7 @@ export const createTask = async (req, res) => {
                 projectId,
                 title,
                 description,
+                descriptionType: descriptionType === "html" ? "html" : "text",
                 type,
                 priority,
                 status,
@@ -140,13 +141,14 @@ export const updateTask = async (req, res) => {
             return res.status(403).json({ message: "You don't have admin privileges for this project" });
         }
 
-        const { title, description, status, type, priority, due_date, groupIds, assigneeIds } = req.body;
+        const { title, description, descriptionType, status, type, priority, due_date, groupIds, assigneeIds } = req.body;
 
         const updatedTask = await prisma.task.update({
             where: { id: req.params.id },
             data: {
                 title,
                 description,
+                descriptionType: descriptionType === "html" ? "html" : "text",
                 status,
                 type,
                 priority,
