@@ -1,6 +1,6 @@
 import { prisma, pool } from "../configs/prisma.js";
-import sendEmail from "../configs/nodemailer.js";
 import { invalidateWorkspaceCache } from "../configs/redis.js";
+import { sendEmailsWithProgress } from "../configs/emailQueue.js";
 
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt
 const safeUser = { select: { id: true, name: true, email: true, image: true } };
@@ -83,32 +83,27 @@ export const createTask = async (req, res) => {
         );
 
         if (uniqueEmails.length > 0) {
-            await Promise.all(uniqueEmails.map((email) =>
-                sendEmail({
+            sendEmailsWithProgress({
+                adminUserId: req.user?.id,
+                workspaceId: project.workspaceId,
+                label: `Task: ${taskWithAssignees.title}`,
+                emails: uniqueEmails.map((email) => ({
                     to: email,
                     subject: `New Task Assignment`,
                     body: `
-                        <div style="max-width: 600px;">
-                        <a href="${origin || ""}" style="background-color: #007bff; padding: 12px 24px; border-radius: 5px; color: #fff; font-weight: 600; font-size: 16px; text-decoration: none; display: inline-block; margin-bottom: 16px;">
-                            Go To Workspace
-                        </a>
+                        <div style="max-width:600px;">
+                        <a href="${origin || ""}" style="background-color:#007bff;padding:12px 24px;border-radius:5px;color:#fff;font-weight:600;font-size:16px;text-decoration:none;display:inline-block;margin-bottom:16px;">Go To Workspace</a>
                         <h2>Hello 👋</h2>
-                        
-                        <p style="font-size: 16px;">A new task has been assigned to you:</p>
-                        <p style="font-size: 18px; font-weight: bold; color: #007bff; margin: 8px 0;">${taskWithAssignees.title}</p>
-                        
-                        <div style="border: 1px solid #ddd; padding: 12px 16px; border-radius: 6px; margin-bottom: 30px;">
-                            <p style="margin: 6px 0;"><strong>Description:</strong> ${taskWithAssignees.description || ""}</p>
-                            <p style="margin: 6px 0;"><strong>Due Date:</strong> ${new Date(taskWithAssignees.due_date).toLocaleDateString()}</p>
+                        <p style="font-size:16px;">A new task has been assigned to you:</p>
+                        <p style="font-size:18px;font-weight:bold;color:#007bff;margin:8px 0;">${taskWithAssignees.title}</p>
+                        <div style="border:1px solid #ddd;padding:12px 16px;border-radius:6px;margin-bottom:30px;">
+                            <p style="margin:6px 0;"><strong>Description:</strong> ${taskWithAssignees.description || ""}</p>
+                            <p style="margin:6px 0;"><strong>Due Date:</strong> ${new Date(taskWithAssignees.due_date).toLocaleDateString()}</p>
                         </div>
-
-                        <p style="margin-top: 20px; font-size: 14px; color: #6c757d;">
-                            Please make sure to review and complete it before the due date.
-                        </p>
-                        </div>
-                        `,
-                })
-            ));
+                        <p style="margin-top:20px;font-size:14px;color:#6c757d;">Please make sure to review and complete it before the due date.</p>
+                        </div>`,
+                })),
+            }).catch(() => {});
         }
 
         await invalidateWorkspaceCache(project.workspaceId, prisma);

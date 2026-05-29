@@ -40,6 +40,25 @@ export const updateMobile = async (req, res) => {
     }
 };
 
+// PUT /api/users/me/name — user updates their own display name
+export const updateName = async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name || !name.trim()) return res.status(400).json({ message: "name is required" });
+        if (name.trim().length > 60) return res.status(400).json({ message: "Name must be 60 characters or fewer" });
+
+        const user = await prisma.user.update({
+            where: { id: req.user.id },
+            data: { name: name.trim() },
+            select: { id: true, name: true, email: true, mobile: true },
+        });
+
+        res.json({ user });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 // GET /api/users/never-logged-in?workspaceId=xxx — admin: members who never logged in
 export const neverLoggedIn = async (req, res) => {
     try {
@@ -72,7 +91,7 @@ export const getTeam = async (req, res) => {
         const { workspaceId } = req.query;
         if (!workspaceId) return res.status(400).json({ message: "workspaceId is required" });
 
-        const [members, groups] = await Promise.all([
+        const [members, groups, workspace] = await Promise.all([
             prisma.workspaceMember.findMany({
                 where: { workspaceId },
                 include: {
@@ -86,6 +105,7 @@ export const getTeam = async (req, res) => {
                 where: { workspaceId },
                 select: { id: true, name: true, members: { select: { userId: true } } },
             }),
+            prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } }),
         ]);
 
         const userGroupMap = new Map();
@@ -96,8 +116,9 @@ export const getTeam = async (req, res) => {
             }
         }
 
+        const workspaceName = workspace?.name || "Admin";
         const WHATSAPP_MSG = encodeURIComponent(
-            "Hi! This is a reminder from your workspace admin at Bluestock Fintech. Please log in and check your tasks."
+            `Hi! This is a reminder from your workspace admin at ${workspaceName}. Please log in and check your tasks.`
         );
 
         const users = members.map((m) => ({
@@ -131,11 +152,13 @@ export const resetMemberPassword = async (req, res) => {
         const { userId, workspaceId, newPassword } = req.body;
         if (!userId) return res.status(400).json({ message: "userId is required" });
 
-        const member = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { id: true, name: true, email: true },
-        });
+        const [member, workspace] = await Promise.all([
+            prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true } }),
+            workspaceId ? prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } }) : null,
+        ]);
         if (!member) return res.status(404).json({ message: "User not found" });
+
+        const workspaceName = workspace?.name || "Admin";
 
         // Determine password
         const isAuto = !newPassword;
@@ -164,7 +187,7 @@ export const resetMemberPassword = async (req, res) => {
                             <p style="margin:4px 0 0;font-size:22px;font-weight:700;letter-spacing:2px;color:#111827;">${password}</p>
                         </div>
                         <p style="color:#6b7280;font-size:13px;">Please log in and change your password immediately.</p>
-                        <p style="color:#6b7280;font-size:13px;">— Bluestock Fintech Admin</p>
+                        <p style="color:#6b7280;font-size:13px;">— ${workspaceName}</p>
                     </div>
                 `,
             });

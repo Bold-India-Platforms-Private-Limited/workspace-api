@@ -1,5 +1,5 @@
 import { prisma, pool } from "../configs/prisma.js";
-import sendEmail from "../configs/nodemailer.js";
+import { sendEmailsWithProgress } from "../configs/emailQueue.js";
 
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt
 const safeUser = { select: { id: true, name: true, email: true, image: true } };
@@ -94,27 +94,24 @@ export const createNotification = async (req, res) => {
                 ? `<p><a href="${buttonUrl}" target="${openInNewTab ? "_blank" : "_self"}">${buttonName}</a></p>`
                 : "";
 
-            await Promise.all(
-                workspace.members
-                    .map((m) => m.user?.email)
-                    .filter(Boolean)
-                    .map((email) =>
-                        sendEmail({
-                            to: email,
-                            subject: `New notification: ${title}`,
-                            body: `
-                                <div style="max-width: 600px;">
-                                    <a href="${origin || ""}" style="background-color: #007bff; padding: 12px 24px; border-radius: 5px; color: #fff; font-weight: 600; font-size: 16px; text-decoration: none; display: inline-block; margin-bottom: 16px;">
-                                        Go To Workspace
-                                    </a>
-                                    <h2>${title}</h2>
-                                    ${subtitle ? `<p>${subtitle}</p>` : ""}
-                                    ${linkHtml}
-                                </div>
-                            `,
-                        })
-                    )
-            );
+            const recipientEmails = workspace.members.map((m) => m.user?.email).filter(Boolean);
+
+            sendEmailsWithProgress({
+                adminUserId: req.user?.id,
+                workspaceId,
+                label: `Notification: ${title}`,
+                emails: recipientEmails.map((email) => ({
+                    to: email,
+                    subject: `New notification: ${title}`,
+                    body: `
+                        <div style="max-width:600px;">
+                            <a href="${origin || ""}" style="background-color:#007bff;padding:12px 24px;border-radius:5px;color:#fff;font-weight:600;font-size:16px;text-decoration:none;display:inline-block;margin-bottom:16px;">Go To Workspace</a>
+                            <h2>${title}</h2>
+                            ${subtitle ? `<p>${subtitle}</p>` : ""}
+                            ${linkHtml}
+                        </div>`,
+                })),
+            }).catch(() => {});
         }
 
         res.json({ notification, message: "Notification created" });

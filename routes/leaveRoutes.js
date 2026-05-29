@@ -1,5 +1,5 @@
 import express from "express";
-import { submitLeave, getMyLeaves, getAllLeaves, reviewLeave, cancelLeave, checkLeaveForDate } from "../controllers/leaveController.js";
+import { submitLeave, getMyLeaves, getAllLeaves, reviewLeave, cancelLeave, checkLeaveForDate, bulkReviewLeaves } from "../controllers/leaveController.js";
 
 const leaveRouter = express.Router();
 
@@ -7,6 +7,7 @@ leaveRouter.get("/check", checkLeaveForDate);       // attendance: approved leav
 leaveRouter.get("/me", getMyLeaves);                // intern: own requests
 leaveRouter.get("/", getAllLeaves);                 // admin: all requests
 leaveRouter.post("/", submitLeave);                 // intern: submit
+leaveRouter.put("/bulk-review", bulkReviewLeaves);  // admin: bulk approve/reject
 leaveRouter.put("/:id/review", reviewLeave);        // admin: approve/reject
 leaveRouter.delete("/:id", cancelLeave);            // intern/admin: cancel
 

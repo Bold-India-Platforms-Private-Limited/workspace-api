@@ -1,5 +1,5 @@
 import { prisma, pool } from "../configs/prisma.js";
-import sendEmail from "../configs/nodemailer.js";
+import { sendEmailsWithProgress } from "../configs/emailQueue.js";
 
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt
 const safeUser = { select: { id: true, name: true, email: true, image: true } };
@@ -110,20 +110,16 @@ export const createGroup = async (req, res) => {
             });
 
             const users = await prisma.user.findMany({ where: { id: { in: validMemberIds } } });
-            await Promise.all(users.map((user) =>
-                sendEmail({
+            sendEmailsWithProgress({
+                adminUserId: req.user?.id,
+                workspaceId,
+                label: `Group: ${name}`,
+                emails: users.map((user) => ({
                     to: user.email,
                     subject: `Added to group ${name}`,
-                    body: `
-                        <div style="max-width: 600px;">
-                            <a href="${origin || ""}" style="background-color: #007bff; padding: 12px 24px; border-radius: 5px; color: #fff; font-weight: 600; font-size: 16px; text-decoration: none; display: inline-block; margin-bottom: 16px;">
-                                Go To Workspace
-                            </a>
-                            <p>You have been added to group <strong>${name}</strong>.</p>
-                        </div>
-                    `,
-                })
-            ));
+                    body: `<div style="max-width:600px;"><a href="${origin || ""}" style="background-color:#007bff;padding:12px 24px;border-radius:5px;color:#fff;font-weight:600;font-size:16px;text-decoration:none;display:inline-block;margin-bottom:16px;">Go To Workspace</a><p>You have been added to group <strong>${name}</strong>.</p></div>`,
+                })),
+            }).catch(() => {});
         }
 
         const groupWithMembers = await prisma.group.findUnique({
@@ -170,20 +166,16 @@ export const updateGroupMembers = async (req, res) => {
             });
 
             const users = await prisma.user.findMany({ where: { id: { in: validAddIds } } });
-            await Promise.all(users.map((user) =>
-                sendEmail({
+            sendEmailsWithProgress({
+                adminUserId: req.user?.id,
+                workspaceId: group.workspaceId,
+                label: `Group: ${group.name}`,
+                emails: users.map((user) => ({
                     to: user.email,
                     subject: `Added to group ${group.name}`,
-                    body: `
-                        <div style="max-width: 600px;">
-                            <a href="${origin || ""}" style="background-color: #007bff; padding: 12px 24px; border-radius: 5px; color: #fff; font-weight: 600; font-size: 16px; text-decoration: none; display: inline-block; margin-bottom: 16px;">
-                                Go To Workspace
-                            </a>
-                            <p>You have been added to group <strong>${group.name}</strong>.</p>
-                        </div>
-                    `,
-                })
-            ));
+                    body: `<div style="max-width:600px;"><a href="${origin || ""}" style="background-color:#007bff;padding:12px 24px;border-radius:5px;color:#fff;font-weight:600;font-size:16px;text-decoration:none;display:inline-block;margin-bottom:16px;">Go To Workspace</a><p>You have been added to group <strong>${group.name}</strong>.</p></div>`,
+                })),
+            }).catch(() => {});
         }
 
         if (Array.isArray(removeUserIds) && removeUserIds.length > 0) {

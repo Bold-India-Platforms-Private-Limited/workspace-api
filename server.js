@@ -17,6 +17,7 @@ import standupRouter from "./routes/standupRoutes.js";
 import userRouter from "./routes/userRoutes.js";
 import leaveRouter from "./routes/leaveRoutes.js";
 import submissionRouter from "./routes/submissionRoutes.js";
+import emailRouter from "./routes/emailRoutes.js";
 import { protect } from "./middlewares/authMiddleware.js";
 
 const app = express();
@@ -39,6 +40,7 @@ io.on('connection', (socket) => {
         socket.workspaceId = workspaceId;
         socket.userId = userId;
         socket.join(workspaceId);
+        socket.join(`user:${userId}`); // personal room for email progress events
 
         if (!activeUsers.has(workspaceId)) {
             activeUsers.set(workspaceId, new Map());
@@ -88,6 +90,7 @@ app.use("/api/standup", protect, standupRouter);
 app.use("/api/users", protect, userRouter);
 app.use("/api/leave", protect, leaveRouter);
 app.use("/api/submissions", protect, submissionRouter);
+app.use("/api/emails", protect, emailRouter);
 
 initRedis();
 

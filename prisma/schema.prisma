@@ -87,7 +87,24 @@ model Workspace {
     standups      StandupEntry[]
     leaveRequests LeaveRequest[]
     submissions   Submission[]
+    emailLogs     EmailLog[]
     owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model EmailLog {
+    id             String   @id @default(uuid())
+    workspaceId    String
+    recipientEmail String
+    recipientName  String?
+    subject        String
+    htmlContent    String
+    status         String   @default("sent")   // sent | failed
+    errorMessage   String?
+    sentAt         DateTime @default(now())
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+    @@index([workspaceId, sentAt(sort: Desc)])
 }
 
 model WorkspaceMember {
