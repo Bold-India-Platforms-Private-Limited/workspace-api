@@ -64,6 +64,35 @@ export const listAttendanceImages = async (req, res) => {
     }
 };
 
+// POST /api/attendance-images/bulk-delete  — delete multiple records by ids
+export const bulkDeleteAttendanceImages = async (req, res) => {
+    try {
+        if (!ensureAdmin(req, res)) return;
+
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: "ids array is required" });
+        }
+
+        const records = await prisma.attendance.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, imageUrl: true },
+        });
+
+        const publicIds = records.map((r) => extractPublicId(r.imageUrl)).filter(Boolean);
+        const chunkSize = 100;
+        for (let i = 0; i < publicIds.length; i += chunkSize) {
+            await cloudinary.api.delete_resources(publicIds.slice(i, i + chunkSize)).catch(() => {});
+        }
+
+        await prisma.attendance.deleteMany({ where: { id: { in: ids } } });
+        res.json({ message: "Deleted", count: records.length });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.code || error.message });
+    }
+};
+
 // DELETE /api/attendance-images/:id  — delete one record + cloudinary image
 export const deleteAttendanceImage = async (req, res) => {
     try {
