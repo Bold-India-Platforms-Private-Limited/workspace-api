@@ -12,18 +12,44 @@ export const getEmailLogs = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
 
-        const { workspaceId } = req.query;
+        const { workspaceId, page = "1", pageSize = "50", status, search } = req.query;
         if (!workspaceId) {
             return res.status(400).json({ message: "workspaceId is required" });
         }
 
-        const emails = await prisma.emailLog.findMany({
-            where: { workspaceId },
-            orderBy: { sentAt: "desc" },
-            take: 500,
-        });
+        const take = Math.min(Math.max(parseInt(pageSize) || 50, 1), 200);
+        const skip = (Math.max(parseInt(page) || 1, 1) - 1) * take;
 
-        res.json({ emails });
+        const where = {
+            workspaceId,
+            ...(status && status !== "all" ? { status } : {}),
+            ...(search
+                ? {
+                      OR: [
+                          { recipientEmail: { contains: search, mode: "insensitive" } },
+                          { subject: { contains: search, mode: "insensitive" } },
+                      ],
+                  }
+                : {}),
+        };
+
+        const [emails, totalFiltered, statusGroups] = await Promise.all([
+            prisma.emailLog.findMany({ where, orderBy: { sentAt: "desc" }, skip, take }),
+            prisma.emailLog.count({ where }),
+            prisma.emailLog.groupBy({
+                by: ["status"],
+                where: { workspaceId },
+                _count: { status: true },
+            }),
+        ]);
+
+        const counts = { total: 0, sent: 0, pending: 0, failed: 0, bounced: 0 };
+        for (const g of statusGroups) {
+            counts[g.status] = g._count.status;
+            counts.total += g._count.status;
+        }
+
+        res.json({ emails, counts, totalFiltered, page: parseInt(page), pageSize: take });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
