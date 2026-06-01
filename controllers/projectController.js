@@ -11,7 +11,7 @@ const safeUser = { select: { id: true, name: true, email: true, image: true } };
 export const createProject = async (req, res) => {
     try {
         const userId = req.user?.id;
-        const { workspaceId, description, name, status, start_date, end_date, progress, priority, groupIds } = req.body;
+        const { workspaceId, description, descriptionType, name, status, start_date, end_date, progress, priority, groupIds } = req.body;
 
         //check if user has admin role for workspace
         const workspace = await prisma.workspace.findUnique({
@@ -32,6 +32,7 @@ export const createProject = async (req, res) => {
                 workspaceId,
                 name,
                 description,
+                descriptionType: descriptionType === "html" ? "html" : "text",
                 status,
                 priority,
                 progress,
@@ -79,7 +80,7 @@ export const createProject = async (req, res) => {
 export const updateProject = async (req, res) => {
     try {
         const userId = req.user?.id;
-        const { id, workspaceId, description, name, status, start_date, end_date, progress, priority, groupIds } = req.body;
+        const { id, workspaceId, description, descriptionType, name, status, start_date, end_date, progress, priority, groupIds } = req.body;
 
         // check if user has admin role for workspace
         const workspace = await prisma.workspace.findUnique({
@@ -110,6 +111,7 @@ export const updateProject = async (req, res) => {
             data: {
                 workspaceId,
                 description,
+                descriptionType: descriptionType === "html" ? "html" : "text",
                 name,
                 status,
                 priority,

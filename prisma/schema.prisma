@@ -121,11 +121,12 @@ model WorkspaceMember {
 }
 
 model Project {
-    id          String          @id @default(uuid())
-    name        String
-    description String?
-    priority    Priority        @default(MEDIUM)
-    status      ProjectStatus   @default(ACTIVE)
+    id              String          @id @default(uuid())
+    name            String
+    description     String?
+    descriptionType String          @default("text")
+    priority        Priority        @default(MEDIUM)
+    status          ProjectStatus   @default(ACTIVE)
     start_date  DateTime?
     end_date    DateTime?
     team_lead   String
@@ -148,6 +149,7 @@ model ProjectDocument {
     title       String
     driveLink   String
     description String?
+    tags        String[] @default([])
     addedById   String
     createdAt   DateTime @default(now())
 
