@@ -36,7 +36,7 @@ export const addDocument = async (req, res) => {
                 title:       title.trim(),
                 driveLink:   driveLink.trim(),
                 description: description?.trim() || null,
-                addedById:   req.user.userId,
+                addedById:   req.user.id,
             },
             include: { addedBy: { select: { id: true, name: true, image: true } } },
         });
