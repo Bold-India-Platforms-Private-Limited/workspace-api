@@ -131,9 +131,18 @@ export const requestNewPassword = async (req, res) => {
 
         const user = await prisma.user.findUnique({ where: { email } });
 
-        // Treat "no user" and "admin-only user with no passwordHash" the same —
+        // Treat "no user", "no passwordHash", and "removed from all workspaces" the same —
         // we don't want to leak which accounts exist.
         if (!user || !user.passwordHash) {
+            return res.status(404).json({ message: "This email is not registered in our system" });
+        }
+
+        // If the user has been removed from all workspaces they are no longer active
+        const membership = await prisma.workspaceMember.findFirst({
+            where: { userId: user.id },
+            include: { workspace: { select: { id: true, name: true } } },
+        });
+        if (!membership) {
             return res.status(404).json({ message: "This email is not registered in our system" });
         }
 
@@ -151,13 +160,9 @@ export const requestNewPassword = async (req, res) => {
         const passwordHash = await bcrypt.hash(newPassword, 10);
         await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
 
-        // Find which workspace this user belongs to (for email logging + workspace name)
-        const membership = await prisma.workspaceMember.findFirst({
-            where: { userId: user.id },
-            include: { workspace: { select: { id: true, name: true } } },
-        });
-        const workspaceName = membership?.workspace?.name || "Workspace";
-        const workspaceId = membership?.workspace?.id || null;
+        // membership is already fetched above — use it for email context
+        const workspaceName = membership.workspace?.name || "Workspace";
+        const workspaceId   = membership.workspace?.id   || null;
 
         await sendEmailLogged({
             to: user.email,
