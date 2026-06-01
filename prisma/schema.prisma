@@ -53,13 +53,14 @@ model User {
     createdAt    DateTime  @default(now())
     updatedAt    DateTime  @updatedAt
 
-    workspaces      WorkspaceMember[]
-    projects        Project[]         @relation("ProjectOwner")
-    taskAssignments TaskAssignee[]
-    comments        Comment[]
-    ownedWorkspaces Workspace[]
-    ProjectMember   ProjectMember[]
-    groupMemberships GroupMember[]
+    workspaces        WorkspaceMember[]
+    projects          Project[]           @relation("ProjectOwner")
+    taskAssignments   TaskAssignee[]
+    comments          Comment[]
+    ownedWorkspaces   Workspace[]
+    ProjectMember     ProjectMember[]
+    groupMemberships  GroupMember[]
+    addedDocuments    ProjectDocument[]   @relation("DocumentAddedBy")
     groupMessages   GroupMessage[]
     attendances     Attendance[]
     standups        StandupEntry[]
@@ -138,6 +139,20 @@ model Project {
     owner     User      @relation("ProjectOwner", fields: [team_lead], references: [id], onDelete: Cascade)
     workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
     tasks     Task[]
+    documents ProjectDocument[]
+}
+
+model ProjectDocument {
+    id          String   @id @default(uuid())
+    projectId   String
+    title       String
+    driveLink   String
+    description String?
+    addedById   String
+    createdAt   DateTime @default(now())
+
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    addedBy   User    @relation("DocumentAddedBy", fields: [addedById], references: [id], onDelete: Cascade)
 }
 
 model ProjectMember {
