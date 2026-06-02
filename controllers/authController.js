@@ -79,8 +79,13 @@ export const login = async (req, res) => {
 
         if (email === adminEmail && password === adminPassword) {
             const adminUser = await ensureAdminUser(email);
-            const token = signToken(adminUser, "ADMIN");
-            return res.json({ token, user: adminUser, role: "ADMIN" });
+            // Always update lastLoginAt so admin doesn't show as "never logged in"
+            const updatedAdmin = await prisma.user.update({
+                where: { id: adminUser.id },
+                data: { lastLoginAt: new Date() },
+            });
+            const token = signToken(updatedAdmin, "ADMIN");
+            return res.json({ token, user: updatedAdmin, role: "ADMIN" });
         }
 
         const user = await prisma.user.findUnique({ where: { email } });
@@ -93,10 +98,14 @@ export const login = async (req, res) => {
             return res.status(401).json({ message: "Invalid credentials" });
         }
 
-        await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+        // Fetch the updated record so the token and response carry the fresh lastLoginAt
+        const updatedUser = await prisma.user.update({
+            where: { id: user.id },
+            data: { lastLoginAt: new Date() },
+        });
 
-        const token = signToken(user, "MEMBER");
-        res.json({ token, user: { ...user, lastLoginAt: new Date() }, role: "MEMBER" });
+        const token = signToken(updatedUser, "MEMBER");
+        res.json({ token, user: updatedUser, role: "MEMBER" });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });

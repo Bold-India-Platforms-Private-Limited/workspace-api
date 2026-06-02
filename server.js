@@ -19,6 +19,7 @@ import leaveRouter from "./routes/leaveRoutes.js";
 import submissionRouter from "./routes/submissionRoutes.js";
 import emailRouter from "./routes/emailRoutes.js";
 import attendanceImageRouter from "./routes/attendanceImageRoutes.js";
+import ndaRouter from "./routes/ndaRoutes.js";
 import { protect } from "./middlewares/authMiddleware.js";
 
 const app = express();
@@ -93,6 +94,7 @@ app.use("/api/leave", protect, leaveRouter);
 app.use("/api/submissions", protect, submissionRouter);
 app.use("/api/emails", protect, emailRouter);
 app.use("/api/attendance-images", protect, attendanceImageRouter);
+app.use("/api/nda", protect, ndaRouter);
 
 initRedis();
 

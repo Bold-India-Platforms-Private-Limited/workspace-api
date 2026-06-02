@@ -2,6 +2,7 @@ import { prisma } from "../configs/prisma.js";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import sendEmail from "../configs/nodemailer.js";
+import { sendEmailLogged } from "../configs/emailQueue.js";
 
 // GET /api/users/me — return own profile (mobile, lastLoginAt etc.)
 export const getMe = async (req, res) => {
@@ -76,7 +77,10 @@ export const neverLoggedIn = async (req, res) => {
             },
         });
 
-        const users = members.filter((m) => !m.user.lastLoginAt).map((m) => m.user);
+        // Exclude ADMIN-role workspace members — only flag interns (MEMBER role)
+        const users = members
+            .filter((m) => m.role !== "ADMIN" && !m.user.lastLoginAt)
+            .map((m) => m.user);
         res.json({ count: users.length, users });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -130,7 +134,8 @@ export const getTeam = async (req, res) => {
             role: m.role,
             memberSince: m.user.createdAt,
             lastLoginAt: m.user.lastLoginAt || null,
-            hasLoggedIn: !!m.user.lastLoginAt,
+            // Admins are always considered "logged in" — they use env credentials
+            hasLoggedIn: m.role === "ADMIN" ? true : !!m.user.lastLoginAt,
             hasMobile: !!m.user.mobile,
             groups: userGroupMap.get(m.user.id) || [],
             whatsappLink: m.user.mobile ? `https://wa.me/${m.user.mobile}?text=${WHATSAPP_MSG}` : null,
@@ -196,6 +201,80 @@ export const resetMemberPassword = async (req, res) => {
 
         res.json({ message: "Password reset successfully" });
     } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// POST /api/users/send-login-reminder
+// Sends a "please log in" email to one specific user (userId) OR all never-logged-in users in the workspace.
+export const sendLoginReminder = async (req, res) => {
+    try {
+        if (req.user?.role !== "ADMIN") return res.status(403).json({ message: "Admin only" });
+
+        const { workspaceId, userId } = req.body;
+        if (!workspaceId) return res.status(400).json({ message: "workspaceId is required" });
+
+        const workspace = await prisma.workspace.findUnique({
+            where: { id: workspaceId },
+            select: { name: true },
+        });
+        const workspaceName = workspace?.name || "your workspace";
+
+        let targets = [];
+
+        if (userId) {
+            // Single user reminder
+            const member = await prisma.workspaceMember.findFirst({
+                where: { workspaceId, userId },
+                include: { user: { select: { id: true, name: true, email: true, lastLoginAt: true } } },
+            });
+            if (!member) return res.status(404).json({ message: "Member not found in workspace" });
+            if (member.user.lastLoginAt) return res.status(400).json({ message: "This user has already logged in." });
+            targets = [member.user];
+        } else {
+            // All never-logged-in members
+            const members = await prisma.workspaceMember.findMany({
+                where: { workspaceId },
+                include: { user: { select: { id: true, name: true, email: true, lastLoginAt: true } } },
+            });
+            targets = members.filter(m => !m.user.lastLoginAt).map(m => m.user);
+        }
+
+        if (targets.length === 0) {
+            return res.json({ sent: 0, message: "No users to remind — everyone has already logged in." });
+        }
+
+        // Send emails in parallel (fire-and-forget per user, await all)
+        await Promise.all(targets.map(u =>
+            sendEmailLogged({
+                to: u.email,
+                subject: `Action Required: Please log in to ${workspaceName}`,
+                body: `
+                    <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:28px;">
+                        <h2 style="color:#1d4ed8;margin-bottom:8px;">👋 Welcome to ${workspaceName}</h2>
+                        <p>Hi <strong>${u.name || u.email}</strong>,</p>
+                        <p>You have been added to the <strong>${workspaceName}</strong> internship workspace, but we noticed you haven't logged in yet.</p>
+                        <div style="margin:20px 0;padding:16px 20px;background:#eff6ff;border-radius:8px;border-left:4px solid #3b82f6;">
+                            <p style="margin:0;font-size:14px;color:#1e40af;font-weight:600;">Please log in as soon as possible</p>
+                            <p style="margin:8px 0 0;font-size:13px;color:#3b82f6;">
+                                Your attendance, tasks, standups, and project assignments are waiting for you. Missing days cannot be recovered.
+                            </p>
+                        </div>
+                        <p style="font-size:13px;color:#6b7280;">
+                            If you don't have your login credentials, please contact your workspace admin or use the <strong>Forgot Password</strong> option on the login page.
+                        </p>
+                        <p style="margin-top:24px;font-size:12px;color:#9ca3af;">— ${workspaceName} Team</p>
+                    </div>`,
+                workspaceId,
+            })
+        ));
+
+        res.json({
+            sent: targets.length,
+            message: `Login reminder sent to ${targets.length} user${targets.length !== 1 ? "s" : ""}.`,
+        });
+    } catch (error) {
+        console.error(error);
         res.status(500).json({ message: error.message });
     }
 };

@@ -61,6 +61,7 @@ model User {
     ProjectMember     ProjectMember[]
     groupMemberships  GroupMember[]
     addedDocuments    ProjectDocument[]   @relation("DocumentAddedBy")
+    ndaSignatures     NdaSignature[]      @relation("NdaSigner")
     groupMessages   GroupMessage[]
     attendances     Attendance[]
     standups        StandupEntry[]
@@ -89,7 +90,22 @@ model Workspace {
     leaveRequests LeaveRequest[]
     submissions   Submission[]
     emailLogs     EmailLog[]
+    ndaSignatures NdaSignature[]
     owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model NdaSignature {
+    id          String   @id @default(uuid())
+    userId      String
+    workspaceId String
+    signedAt    DateTime @default(now())
+    ipAddress   String?
+    userAgent   String?
+
+    user      User      @relation("NdaSigner",    fields: [userId],      references: [id], onDelete: Cascade)
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, workspaceId])
 }
 
 model EmailLog {
