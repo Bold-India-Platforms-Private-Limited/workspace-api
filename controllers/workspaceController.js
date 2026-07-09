@@ -8,10 +8,42 @@ import { cacheGet, cacheSet, cacheDel, invalidateWorkspaceCache } from "../confi
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt to non-admin responses
 const safeUser = { select: { id: true, name: true, email: true, image: true } };
 
+// Restricts a workspace's cross-cutting rosters to what a MEMBER (non-admin)
+// is allowed to see: their own group(s), fellow members of those groups, and
+// projects assigned to those groups. This mirrors — exactly — the filtering
+// every member-facing page already does client-side (Projects.jsx, StatsGrid,
+// ProjectOverview, TasksSummary, MyTasksSidebar, ProjectsSidebar, RecentActivity,
+// ProjectCalendar, ProjectTasks, TaskDetails all independently filter
+// `group.members?.some(m => m.userId === user.id)` before use). Enforcing it
+// here too means a member's full workspace roster / other groups' membership
+// / other groups' projects never reach the browser at all, not just hidden
+// from the UI. Admins are unaffected — they still get everything.
+function scopeWorkspaceForMember(workspace, userId) {
+    const myGroups = (workspace.groups || []).filter((g) =>
+        g.members?.some((m) => m.userId === userId)
+    );
+    const myGroupIds = new Set(myGroups.map((g) => g.id));
+
+    const myGroupmateIds = new Set([userId]);
+    myGroups.forEach((g) => (g.members || []).forEach((m) => myGroupmateIds.add(m.userId)));
+
+    const scopedProjects = (workspace.projects || []).filter((project) =>
+        (project.groups || []).some((pg) => myGroupIds.has(pg.groupId || pg.group?.id))
+    );
+
+    return {
+        ...workspace,
+        members: (workspace.members || []).filter((m) => myGroupmateIds.has(m.userId)),
+        groups: myGroups,
+        projects: scopedProjects,
+    };
+}
+
 // Get all workspaces for user
 export const getUserWorkspaces = async (req, res) => {
     try {
         const userId = req.user?.id;
+        const role = req.user?.role;
 
         // Serve from Redis when available — avoids the heavy DB join on every request
         const cacheKey = `ws:user:${userId}`;
@@ -48,12 +80,19 @@ export const getUserWorkspaces = async (req, res) => {
                         }
                     }
                 },
-                owner: true
+                owner: safeUser
             }
         });
+
+        // Non-admins only ever see their own group(s) + groupmates + those
+        // groups' projects. Admins keep the full workspace graph, unchanged.
+        const scoped = role === "ADMIN"
+            ? workspaces
+            : workspaces.map((ws) => scopeWorkspaceForMember(ws, userId));
+
         // Cache before responding so concurrent requests also benefit
-        await cacheSet(cacheKey, workspaces);
-        res.json({ workspaces });
+        await cacheSet(cacheKey, scoped);
+        res.json({ workspaces: scoped });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });

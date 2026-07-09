@@ -17,16 +17,19 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
  * @param {string}  adminUserId   socket room "user:<id>" receives progress events
  * @param {string}  workspaceId   used for DB logging
  * @param {string}  [label]       human-readable label shown in progress bar
+ * @param {string}  [jobId]       caller-supplied id (lets the caller return it to the
+ *                                client immediately, before sending starts) — defaults
+ *                                to a freshly generated one
+ * @param {number}  [rateLimit]   fixed emails/min; omit to keep the original random 100–250/min
  */
-export async function sendEmailsWithProgress({ emails, adminUserId, workspaceId, label = "Email" }) {
-    const jobId = randomUUID();
+export async function sendEmailsWithProgress({ emails, adminUserId, workspaceId, label = "Email", jobId = randomUUID(), rateLimit }) {
     const total = emails.length;
 
     if (total === 0) return { jobId, total: 0, sent: 0, failed: 0, rateLimit: 0 };
 
-    // Random rate: 100–250 per minute
-    const rateLimit = Math.floor(Math.random() * 151) + 100; // 100..250
-    const delayMs = Math.floor(60_000 / rateLimit);
+    // Random rate: 100–250 per minute, unless the caller pins a specific rate
+    const effectiveRateLimit = rateLimit || Math.floor(Math.random() * 151) + 100; // 100..250
+    const delayMs = Math.floor(60_000 / effectiveRateLimit);
 
     const emit = (payload) => {
         try {
@@ -35,7 +38,7 @@ export async function sendEmailsWithProgress({ emails, adminUserId, workspaceId,
     };
 
     // Announce job start
-    emit({ jobId, label, total, sent: 0, failed: 0, rateLimit, done: false });
+    emit({ jobId, label, total, sent: 0, failed: 0, rateLimit: effectiveRateLimit, done: false });
 
     let sent = 0;
     let failed = 0;
@@ -68,12 +71,12 @@ export async function sendEmailsWithProgress({ emails, adminUserId, workspaceId,
         }
 
         const done = sent + failed >= total;
-        emit({ jobId, label, total, sent, failed, rateLimit, done });
+        emit({ jobId, label, total, sent, failed, rateLimit: effectiveRateLimit, done });
 
         if (!done) await delay(delayMs);
     }
 
-    return { jobId, total, sent, failed, rateLimit };
+    return { jobId, total, sent, failed, rateLimit: effectiveRateLimit };
 }
 
 /**

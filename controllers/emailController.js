@@ -1,4 +1,6 @@
+import { randomUUID } from "crypto";
 import { prisma } from "../configs/prisma.js";
+import { sendEmailsWithProgress } from "../configs/emailQueue.js";
 
 const ensureAdmin = (req, res) => {
     if (req.user?.role !== "ADMIN") {
@@ -6,6 +8,59 @@ const ensureAdmin = (req, res) => {
         return false;
     }
     return true;
+};
+
+// Fixed send rate for admin-composed broadcasts (workspaces run ~2k members,
+// so this is deliberately capped well under mail-provider throughput limits).
+const BROADCAST_RATE_PER_MIN = 100;
+
+// POST /api/emails/broadcast
+// body: { workspaceId, subject, body (html), recipientMode: "all" | "selected", userIds? }
+// Fires the send in the background and returns immediately with a jobId —
+// the client tracks real-time progress via the "email_job_progress" socket event.
+export const sendBroadcastEmail = async (req, res) => {
+    try {
+        if (!ensureAdmin(req, res)) return;
+
+        const { workspaceId, subject, body, recipientMode, userIds } = req.body;
+
+        if (!workspaceId || !subject?.trim() || !body?.trim()) {
+            return res.status(400).json({ message: "workspaceId, subject, and body are required" });
+        }
+        if (recipientMode === "selected" && (!Array.isArray(userIds) || userIds.length === 0)) {
+            return res.status(400).json({ message: "userIds is required when recipientMode is 'selected'" });
+        }
+
+        const members = await prisma.workspaceMember.findMany({
+            where: {
+                workspaceId,
+                ...(recipientMode === "selected" ? { userId: { in: userIds } } : {}),
+            },
+            include: { user: { select: { id: true, name: true, email: true } } },
+        });
+
+        const recipients = members.map((m) => m.user).filter((u) => u?.email);
+        if (recipients.length === 0) {
+            return res.status(400).json({ message: "No recipients found" });
+        }
+
+        const jobId = randomUUID();
+        const emails = recipients.map((u) => ({ to: u.email, subject, body }));
+
+        sendEmailsWithProgress({
+            emails,
+            adminUserId: req.user.id,
+            workspaceId,
+            label: subject,
+            jobId,
+            rateLimit: BROADCAST_RATE_PER_MIN,
+        }).catch((err) => console.error("[Broadcast email] send error:", err.message));
+
+        res.json({ message: "Broadcast started", jobId, total: recipients.length, rateLimit: BROADCAST_RATE_PER_MIN });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.code || error.message });
+    }
 };
 
 export const getEmailLogs = async (req, res) => {

@@ -1,5 +1,9 @@
 import { prisma, pool } from "../configs/prisma.js";
 import { sendEmailsWithProgress } from "../configs/emailQueue.js";
+import { cacheGet, cacheSet, cacheDel } from "../configs/redis.js";
+
+const NOTIF_CACHE_TTL = 60; // seconds
+const notifCacheKey = (workspaceId) => `notif:ws:${workspaceId}`;
 
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt
 const safeUser = { select: { id: true, name: true, email: true, image: true } };
@@ -27,10 +31,15 @@ export const listNotifications = async (req, res) => {
             return res.status(400).json({ message: "workspaceId is required" });
         }
 
-        const notifications = await prisma.notification.findMany({
-            where: { workspaceId },
-            orderBy: { createdAt: "desc" },
-        });
+        const cacheKey = notifCacheKey(workspaceId);
+        let notifications = await cacheGet(cacheKey);
+        if (!notifications) {
+            notifications = await prisma.notification.findMany({
+                where: { workspaceId },
+                orderBy: { createdAt: "desc" },
+            });
+            await cacheSet(cacheKey, notifications, NOTIF_CACHE_TTL);
+        }
 
         if (req.user?.role === "MEMBER") {
             const { start, end } = getDayBounds(new Date());
@@ -88,6 +97,7 @@ export const createNotification = async (req, res) => {
             where: { id: workspaceId },
             include: { members: { include: { user: safeUser } } },
         });
+        await cacheDel([notifCacheKey(workspaceId)]);
 
         if (workspace?.members?.length) {
             const linkHtml = buttonName && buttonUrl
@@ -137,6 +147,7 @@ export const updateNotification = async (req, res) => {
                 openInNewTab: Boolean(openInNewTab),
             },
         });
+        await cacheDel([notifCacheKey(notification.workspaceId)]);
 
         res.json({ notification, message: "Notification updated" });
     } catch (error) {
@@ -149,7 +160,8 @@ export const deleteNotification = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
         const { id } = req.params;
-        await prisma.notification.delete({ where: { id } });
+        const deleted = await prisma.notification.delete({ where: { id } });
+        await cacheDel([notifCacheKey(deleted.workspaceId)]);
         res.json({ message: "Notification deleted" });
     } catch (error) {
         console.log(error);

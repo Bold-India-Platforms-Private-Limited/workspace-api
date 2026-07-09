@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { initRedis } from "./configs/redis.js";
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -73,6 +74,7 @@ io.on('connection', (socket) => {
 // Export io for use in controllers if needed
 export { io };
 
+app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 app.use(cors());
 

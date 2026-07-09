@@ -28,11 +28,22 @@ export const listGroups = async (req, res) => {
 
         const groups = await prisma.group.findMany({
             where,
-            include: { members: { include: { user: safeUser } } },
+            include: {
+                members: { include: { user: safeUser } },
+                messages: { orderBy: { createdAt: "desc" }, take: 1, include: { user: safeUser } },
+            },
             orderBy: { createdAt: "desc" },
         });
 
-        res.json({ groups });
+        // Carry only the last message per group (for sorting/preview) — avoids
+        // every caller having to fetch each group's full message history just
+        // to know what was said most recently.
+        const withLastMessage = groups.map(({ messages, ...group }) => ({
+            ...group,
+            lastMessage: messages[0] || null,
+        }));
+
+        res.json({ groups: withLastMessage });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
@@ -238,6 +249,7 @@ const canAccessGroup = (group, userId, role) => {
 export const listGroupMessages = async (req, res) => {
     try {
         const { id } = req.params;
+        const { after } = req.query;
         const userId = req.user?.id;
         const role = req.user?.role;
 
@@ -254,8 +266,17 @@ export const listGroupMessages = async (req, res) => {
             return res.status(403).json({ message: "You don't have access to this group" });
         }
 
+        // `after` (ISO timestamp) lets a poller fetch only new messages since
+        // its last successful fetch instead of re-downloading the full
+        // history every time. Omitting it keeps the original full-history
+        // behavior unchanged.
+        const afterDate = after ? new Date(after) : null;
+        const where = afterDate && !isNaN(afterDate)
+            ? { groupId: id, createdAt: { gt: afterDate } }
+            : { groupId: id };
+
         const messages = await prisma.groupMessage.findMany({
-            where: { groupId: id },
+            where,
             include: { user: safeUser },
             orderBy: { createdAt: "asc" },
         });
