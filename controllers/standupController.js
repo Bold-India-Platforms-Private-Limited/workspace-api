@@ -166,6 +166,7 @@ export const getStandupsByDate = async (req, res) => {
         const members = await prisma.workspaceMember.findMany({
             where: { workspaceId },
             include: { user: { select: { id: true, name: true, email: true, image: true } } },
+            take: 3000, // defensive cap — bounded by workspace member count
         });
 
         // All standup entries for that date
@@ -173,6 +174,7 @@ export const getStandupsByDate = async (req, res) => {
             where: { workspaceId, date: { gte: start, lte: end } },
             include: { user: { select: { id: true, name: true, email: true, image: true } } },
             orderBy: { createdAt: "asc" },
+            take: 3000, // single day — bounded by workspace member count
         });
 
         // Group entries by userId
@@ -219,11 +221,13 @@ export const getStandupSummary = async (req, res) => {
         const members = await prisma.workspaceMember.findMany({
             where: { workspaceId },
             include: { user: { select: { id: true, name: true, email: true, image: true } } },
+            take: 3000, // defensive cap — bounded by workspace member count
         });
 
         const entries = await prisma.standupEntry.findMany({
             where: { workspaceId, date: { gte: start, lte: end } },
             select: { userId: true, date: true, type: true },
+            take: 15000, // one month, workspace-wide — comfortably above today's real peak (~3k)
         });
 
         // Count unique days submitted per user

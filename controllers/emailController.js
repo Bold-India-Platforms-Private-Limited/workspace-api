@@ -37,6 +37,8 @@ export const sendBroadcastEmail = async (req, res) => {
                 ...(recipientMode === "selected" ? { userId: { in: userIds } } : {}),
             },
             include: { user: { select: { id: true, name: true, email: true } } },
+            take: 5000, // this is the actual recipient list, not a display cap —
+            // set well above any realistic workspace size so no real recipient is ever dropped
         });
 
         const recipients = members.map((m) => m.user).filter((u) => u?.email);

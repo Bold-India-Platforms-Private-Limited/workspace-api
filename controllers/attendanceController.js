@@ -112,11 +112,13 @@ export const getAttendanceByDate = async (req, res) => {
         const members = await prisma.workspaceMember.findMany({
             where: { workspaceId },
             include: { user: safeUser },
+            take: 3000, // defensive cap — bounded by workspace member count
         });
 
         const entries = await prisma.attendance.findMany({
             where: { workspaceId, date: { gte: start, lte: end } },
             include: { user: safeUser },
+            take: 3000, // single day — bounded by workspace member count
         });
 
         const entryMap = new Map(entries.map((e) => [e.userId, e]));
@@ -148,6 +150,7 @@ export const getAbsentLists = async (req, res) => {
         const members = await prisma.workspaceMember.findMany({
             where: { workspaceId },
             include: { user: { select: { id: true, name: true, email: true } } },
+            take: 3000, // defensive cap — bounded by workspace member count
         });
 
         // Today's bounds in IST (server computes IST date to stay consistent with markAttendance)
@@ -201,6 +204,7 @@ export const sendAttendanceReminder = async (req, res) => {
         const members = await prisma.workspaceMember.findMany({
             where: { workspaceId },
             include: { user: { select: { id: true, name: true, email: true } } },
+            take: 3000, // defensive cap — bounded by workspace member count
         });
 
         const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
