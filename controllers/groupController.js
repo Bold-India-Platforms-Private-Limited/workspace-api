@@ -268,18 +268,33 @@ export const listGroupMessages = async (req, res) => {
 
         // `after` (ISO timestamp) lets a poller fetch only new messages since
         // its last successful fetch instead of re-downloading the full
-        // history every time. Omitting it keeps the original full-history
-        // behavior unchanged.
+        // history every time.
         const afterDate = after ? new Date(after) : null;
-        const where = afterDate && !isNaN(afterDate)
-            ? { groupId: id, createdAt: { gt: afterDate } }
-            : { groupId: id };
+        const isIncremental = afterDate && !isNaN(afterDate);
 
-        const messages = await prisma.groupMessage.findMany({
-            where,
-            include: { user: safeUser },
-            orderBy: { createdAt: "asc" },
-        });
+        // Defensive cap: without `after` this is the initial "open this chat"
+        // load, which previously fetched the entire history unbounded. Deltas
+        // (the `after` path) are always small between polls, so only the
+        // full-history path needs bounding — matches the PAGE_SIZE the
+        // frontend already uses elsewhere.
+        const HISTORY_CAP = 200;
+
+        let messages;
+        if (isIncremental) {
+            messages = await prisma.groupMessage.findMany({
+                where: { groupId: id, createdAt: { gt: afterDate } },
+                include: { user: safeUser },
+                orderBy: { createdAt: "asc" },
+            });
+        } else {
+            const recent = await prisma.groupMessage.findMany({
+                where: { groupId: id },
+                include: { user: safeUser },
+                orderBy: { createdAt: "desc" },
+                take: HISTORY_CAP,
+            });
+            messages = recent.reverse();
+        }
 
         res.json({ messages });
     } catch (error) {

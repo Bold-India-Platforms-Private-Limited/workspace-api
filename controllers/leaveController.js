@@ -59,6 +59,7 @@ export const getMyLeaves = async (req, res) => {
         const leaves = await prisma.leaveRequest.findMany({
             where: { workspaceId, userId: req.user.id },
             orderBy: { createdAt: "desc" },
+            take: 200, // defensive cap — one person's own history, generous ceiling
         });
 
         res.json({ leaves });
@@ -86,6 +87,7 @@ export const getAllLeaves = async (req, res) => {
             where,
             include: { user: { select: userSelect } },
             orderBy: { createdAt: "desc" },
+            take: 500, // defensive cap — this list only grows over time
         });
 
         res.json({ leaves, total: leaves.length });

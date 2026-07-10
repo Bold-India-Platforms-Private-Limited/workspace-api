@@ -50,6 +50,7 @@ export const getAllSignatures = async (req, res) => {
             where: { workspaceId },
             orderBy: { signedAt: "desc" },
             include: { user: { select: { id: true, name: true, email: true, image: true } } },
+            take: 3000, // defensive cap — bounded by workspace member count, well above today's scale
         });
         res.json({ signatures: sigs });
     } catch (err) {

@@ -63,6 +63,7 @@ export const listCandidateTeamMessages = async (req, res) => {
                 project: { select: { id: true, name: true, owner: safeUser } },
             },
             orderBy: { createdAt: "desc" },
+            take: 500, // bound the payload — this feed only ever needs the recent backlog
         });
 
         res.json({ messages });

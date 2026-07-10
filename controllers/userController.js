@@ -75,6 +75,7 @@ export const neverLoggedIn = async (req, res) => {
                     select: { id: true, name: true, email: true, mobile: true, lastLoginAt: true, createdAt: true },
                 },
             },
+            take: 3000, // defensive cap — bounded by workspace member count
         });
 
         // Exclude ADMIN-role workspace members — only flag interns (MEMBER role)
@@ -104,10 +105,12 @@ export const getTeam = async (req, res) => {
                     },
                 },
                 orderBy: { user: { name: "asc" } },
+                take: 3000, // defensive cap — bounded by workspace member count
             }),
             prisma.group.findMany({
                 where: { workspaceId },
                 select: { id: true, name: true, members: { select: { userId: true } } },
+                take: 3000, // defensive cap — bounded by workspace group count
             }),
             prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } }),
         ]);
@@ -236,6 +239,7 @@ export const sendLoginReminder = async (req, res) => {
             const members = await prisma.workspaceMember.findMany({
                 where: { workspaceId },
                 include: { user: { select: { id: true, name: true, email: true, lastLoginAt: true } } },
+                take: 3000, // defensive cap — bounded by workspace member count
             });
             targets = members.filter(m => !m.user.lastLoginAt).map(m => m.user);
         }

@@ -78,11 +78,13 @@ export const getAllSubmissions = async (req, res) => {
             where: { workspaceId },
             include: { user: { select: { id: true, name: true, email: true, image: true } } },
             orderBy: { user: { name: "asc" } },
+            take: 3000, // defensive cap — bounded by workspace member count
         });
 
-        // Get all submissions for this workspace
+        // Get all submissions for this workspace (one per user, bounded by member count)
         const submissions = await prisma.submission.findMany({
             where: { workspaceId },
+            take: 3000,
         });
 
         const submissionMap = Object.fromEntries(submissions.map(s => [s.userId, s]));

@@ -29,6 +29,7 @@ export const listNotices = async (req, res) => {
                     ...(isAdmin ? {} : { published: true }),
                 },
                 orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+                take: 200, // defensive cap — admin-authored content, low write rate
             });
             await cacheSet(cacheKey, notices, NOTICE_CACHE_TTL);
         }

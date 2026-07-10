@@ -156,18 +156,17 @@ export const getAbsentLists = async (req, res) => {
         const todayDateStr = nowInIST.toISOString().substring(0, 10); // "YYYY-MM-DD"
         const { start: todayStart, end: todayEnd } = getDayBounds(new Date(todayDateStr));
 
-        // All attendance records for this workspace — fetch once, filter in-memory
-        const allAttendances = await prisma.attendance.findMany({
-            where: { workspaceId },
-            select: { userId: true, date: true },
-        });
+        // Two small, bounded queries instead of pulling every attendance row
+        // this workspace has ever had: "ever attended" only needs one row per
+        // distinct user (bounded by member count), and "today" is already
+        // naturally small since it's filtered to a single day.
+        const [everAttendedRows, attendedTodayRows] = await Promise.all([
+            prisma.attendance.findMany({ where: { workspaceId }, select: { userId: true }, distinct: ["userId"] }),
+            prisma.attendance.findMany({ where: { workspaceId, date: { gte: todayStart, lte: todayEnd } }, select: { userId: true } }),
+        ]);
 
-        const everAttended = new Set(allAttendances.map((a) => a.userId));
-        const attendedToday = new Set(
-            allAttendances
-                .filter((a) => a.date >= todayStart && a.date <= todayEnd)
-                .map((a) => a.userId)
-        );
+        const everAttended = new Set(everAttendedRows.map((a) => a.userId));
+        const attendedToday = new Set(attendedTodayRows.map((a) => a.userId));
 
         const neverAttended = members
             .filter((m) => !everAttended.has(m.userId))
@@ -209,15 +208,13 @@ export const sendAttendanceReminder = async (req, res) => {
         const todayDateStr = nowInIST.toISOString().substring(0, 10);
         const { start: todayStart, end: todayEnd } = getDayBounds(new Date(todayDateStr));
 
-        const allAttendances = await prisma.attendance.findMany({
-            where: { workspaceId },
-            select: { userId: true, date: true },
-        });
+        const [everAttendedRows, attendedTodayRows] = await Promise.all([
+            prisma.attendance.findMany({ where: { workspaceId }, select: { userId: true }, distinct: ["userId"] }),
+            prisma.attendance.findMany({ where: { workspaceId, date: { gte: todayStart, lte: todayEnd } }, select: { userId: true } }),
+        ]);
 
-        const everAttended = new Set(allAttendances.map((a) => a.userId));
-        const attendedToday = new Set(
-            allAttendances.filter((a) => a.date >= todayStart && a.date <= todayEnd).map((a) => a.userId)
-        );
+        const everAttended = new Set(everAttendedRows.map((a) => a.userId));
+        const attendedToday = new Set(attendedTodayRows.map((a) => a.userId));
 
         let targets = [];
         if (type === "neverAttended") {
@@ -288,6 +285,9 @@ export const getMyAttendanceStatus = async (req, res) => {
     }
 };
 
+// DELETE /api/attendance/batch — bulk-deletes the photos for a date range
+// (frees Cloudinary storage) but keeps the Attendance rows, so historical
+// present/absent status is unaffected by cleaning up old images.
 export const deleteAttendanceByDates = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
@@ -301,7 +301,7 @@ export const deleteAttendanceByDates = async (req, res) => {
         const endBound = getDayBounds(new Date(endDate)).end;
 
         const records = await prisma.attendance.findMany({
-            where: { workspaceId, date: { gte: startBound, lte: endBound } },
+            where: { workspaceId, date: { gte: startBound, lte: endBound }, imageUrl: { not: "" } },
             select: { imageUrl: true },
         });
 
@@ -326,11 +326,15 @@ export const deleteAttendanceByDates = async (req, res) => {
             }
         }
 
-        const deleted = await prisma.attendance.deleteMany({
+        // Clear the images only — keep the Attendance rows so people already
+        // marked present for these days stay marked present, per-record fact
+        // that shouldn't disappear just because the photo was cleaned up.
+        const updated = await prisma.attendance.updateMany({
             where: { workspaceId, date: { gte: startBound, lte: endBound } },
+            data: { imageUrl: "" },
         });
 
-        res.json({ message: "Attendance deleted", count: deleted.count });
+        res.json({ message: "Images deleted, attendance kept", count: updated.count });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });

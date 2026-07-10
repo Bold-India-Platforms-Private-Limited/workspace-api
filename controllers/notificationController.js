@@ -37,6 +37,7 @@ export const listNotifications = async (req, res) => {
             notifications = await prisma.notification.findMany({
                 where: { workspaceId },
                 orderBy: { createdAt: "desc" },
+                take: 200, // defensive cap — admin-authored content, low write rate
             });
             await cacheSet(cacheKey, notifications, NOTIF_CACHE_TTL);
         }

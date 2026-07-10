@@ -78,7 +78,12 @@ export const getTaskComments = async (req, res) => {
         const cacheKey = commentsCacheKey(taskId);
         let comments = await cacheGet(cacheKey);
         if (!comments) {
-            comments = await prisma.comment.findMany({ where: { taskId }, include: { user: safeUser } });
+            comments = await prisma.comment.findMany({
+                where: { taskId },
+                include: { user: safeUser },
+                orderBy: { createdAt: "asc" },
+                take: 500, // defensive cap — bounded to one task's thread
+            });
             await cacheSet(cacheKey, comments, COMMENTS_CACHE_TTL);
         }
         res.json({ comments });

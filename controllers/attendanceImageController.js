@@ -21,12 +21,23 @@ const extractPublicId = (url = "") => {
     }
 };
 
-// GET /api/attendance-images
+// GET /api/attendance-images?days=7|30|90|all
 // Returns all workspaces with their attendance records (grouped by date),
-// each record includes the image URL + user info.
+// each record includes the image URL + user info. Defaults to the last 7
+// days — this list only ever grows, so re-shipping the entire history on
+// every admin visit was a real cost; pass days=all to see everything.
 export const listAttendanceImages = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
+
+        const { days } = req.query;
+        const windowDays = Number(days);
+        const dateFilter = days === "all"
+            ? {}
+            : { date: { gte: new Date(Date.now() - (windowDays > 0 ? windowDays : 7) * 24 * 60 * 60 * 1000) } };
+        // Records whose image was deleted (imageUrl cleared) stay in the DB so
+        // attendance stays marked, but there's nothing left to manage here.
+        const where = { ...dateFilter, imageUrl: { not: "" } };
 
         const workspaces = await prisma.workspace.findMany({
             select: { id: true, name: true },
@@ -34,6 +45,7 @@ export const listAttendanceImages = async (req, res) => {
         });
 
         const records = await prisma.attendance.findMany({
+            where,
             orderBy: { date: "desc" },
             include: {
                 user: { select: { id: true, name: true, email: true, image: true } },
@@ -64,7 +76,10 @@ export const listAttendanceImages = async (req, res) => {
     }
 };
 
-// POST /api/attendance-images/bulk-delete  — delete multiple records by ids
+// POST /api/attendance-images/bulk-delete  — delete multiple records' images by ids.
+// Clears the image only — the Attendance row (and its "marked" status) stays,
+// since attendance is a fact about that day regardless of whether the photo
+// is still around.
 export const bulkDeleteAttendanceImages = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
@@ -85,15 +100,16 @@ export const bulkDeleteAttendanceImages = async (req, res) => {
             await cloudinary.api.delete_resources(publicIds.slice(i, i + chunkSize)).catch(() => {});
         }
 
-        await prisma.attendance.deleteMany({ where: { id: { in: ids } } });
-        res.json({ message: "Deleted", count: records.length });
+        await prisma.attendance.updateMany({ where: { id: { in: ids } }, data: { imageUrl: "" } });
+        res.json({ message: "Image deleted, attendance kept", count: records.length });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
     }
 };
 
-// DELETE /api/attendance-images/:id  — delete one record + cloudinary image
+// DELETE /api/attendance-images/:id  — delete one record's image + cloudinary
+// asset, keeping the Attendance row (and its "marked" status) intact.
 export const deleteAttendanceImage = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
@@ -107,8 +123,8 @@ export const deleteAttendanceImage = async (req, res) => {
             await cloudinary.uploader.destroy(publicId).catch(() => {});
         }
 
-        await prisma.attendance.delete({ where: { id } });
-        res.json({ message: "Deleted" });
+        await prisma.attendance.update({ where: { id }, data: { imageUrl: "" } });
+        res.json({ message: "Image deleted, attendance kept" });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
@@ -122,7 +138,8 @@ export const listOrphanedImages = async (req, res) => {
         if (!ensureAdmin(req, res)) return;
 
         // Fetch all DB image URLs → build a Set of known publicIds
-        const dbRecords = await prisma.attendance.findMany({ select: { imageUrl: true } });
+        // (cleared records have no imageUrl, so they're naturally excluded)
+        const dbRecords = await prisma.attendance.findMany({ where: { imageUrl: { not: "" } }, select: { imageUrl: true } });
         const knownIds = new Set(dbRecords.map((r) => extractPublicId(r.imageUrl)).filter(Boolean));
 
         // Fetch all resources from Cloudinary under attendance/ folder (paginate with next_cursor)
