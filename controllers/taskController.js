@@ -1,5 +1,5 @@
 import { prisma, pool } from "../configs/prisma.js";
-import { invalidateWorkspaceCache } from "../configs/redis.js";
+import { invalidateWorkspaceCacheForProject } from "../configs/redis.js";
 import { sendEmailsWithProgress } from "../configs/emailQueue.js";
 
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt
@@ -107,7 +107,7 @@ export const createTask = async (req, res) => {
             }).catch(() => {});
         }
 
-        await invalidateWorkspaceCache(project.workspaceId, prisma);
+        await invalidateWorkspaceCacheForProject(project.id, prisma);
         res.json({ task: taskWithAssignees, message: "Task created successfully" });
     } catch (error) {
         console.log(error);
@@ -199,7 +199,7 @@ export const updateTask = async (req, res) => {
             include: { assignees: { include: { user: safeUser } }, groups: { include: { group: { include: { members: { include: { user: safeUser } } } } } } },
         });
 
-        await invalidateWorkspaceCache(project.workspaceId, prisma);
+        await invalidateWorkspaceCacheForProject(project.id, prisma);
         res.json({ message: "Task updated successfully", task: updatedWithGroups });
     } catch (error) {
         console.log(error);
@@ -236,7 +236,7 @@ export const deleteTask = async (req, res) => {
             where: { id: { in: tasksIds } },
         });
 
-        await invalidateWorkspaceCache(project.workspaceId, prisma);
+        await invalidateWorkspaceCacheForProject(project.id, prisma);
         res.json({ message: "Task deleted successfully" });
     } catch (error) {
         console.log(error);

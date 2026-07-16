@@ -73,3 +73,37 @@ export async function invalidateWorkspaceCache(workspaceId, prisma) {
         console.error("[Redis] Invalidation error:", err.message);
     }
 }
+
+// Narrower invalidation for task/project mutations. A project's visibility
+// (per scopeWorkspaceForMember in workspaceController.js) is governed only by
+// which groups are assigned to it (ProjectGroup) — never by TaskGroup or
+// ProjectMember — so a task/project change can only ever affect members of
+// those assigned groups, plus admins (who always see the full graph,
+// unscoped). Invalidating everyone else in the workspace is wasted work: it
+// forces their next normal page load to recompute and re-download the full
+// nested graph for a change they can't even see.
+export async function invalidateWorkspaceCacheForProject(projectId, prisma) {
+    if (!client) return;
+    try {
+        const project = await prisma.project.findUnique({
+            where: { id: projectId },
+            select: {
+                workspaceId: true,
+                groups: { select: { group: { select: { members: { select: { userId: true } } } } } },
+            },
+        });
+        if (!project) return;
+
+        const admins = await prisma.workspaceMember.findMany({
+            where: { workspaceId: project.workspaceId, role: "ADMIN" },
+            select: { userId: true },
+        });
+
+        const affected = new Set(admins.map((m) => m.userId));
+        project.groups.forEach((pg) => pg.group.members.forEach((m) => affected.add(m.userId)));
+
+        await cacheDel(Array.from(affected).map((userId) => `ws:user:${userId}`));
+    } catch (err) {
+        console.error("[Redis] Scoped invalidation error:", err.message);
+    }
+}

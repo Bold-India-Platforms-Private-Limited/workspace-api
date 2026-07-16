@@ -76,7 +76,7 @@ export { io };
 
 app.use(compression());
 app.use(express.json({ limit: "10mb" }));
-app.use(cors());
+app.use(cors({ exposedHeaders: ["ETag"] }));
 
 app.get('/', (req, res) => res.send('Server is live!'));
 

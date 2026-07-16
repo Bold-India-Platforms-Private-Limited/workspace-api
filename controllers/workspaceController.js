@@ -49,7 +49,11 @@ export const getUserWorkspaces = async (req, res) => {
         const cacheKey = `ws:user:${userId}`;
         const cached = await cacheGet(cacheKey);
         if (cached) {
-            return res.json({ workspaces: cached, fromCache: true });
+            // Same response shape as the cache-miss path below — identical data
+            // must serialize identically so Express's auto ETag matches across
+            // hit/miss and the client's conditional GET (If-None-Match) actually
+            // gets a 304 instead of a full re-transfer.
+            return res.json({ workspaces: cached });
         }
 
         const workspaces = await prisma.workspace.findMany({

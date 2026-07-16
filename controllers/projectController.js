@@ -2,7 +2,7 @@ import { prisma, pool } from "../configs/prisma.js";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import sendEmail from "../configs/nodemailer.js";
-import { invalidateWorkspaceCache } from "../configs/redis.js";
+import { invalidateWorkspaceCacheForProject } from "../configs/redis.js";
 
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt
 const safeUser = { select: { id: true, name: true, email: true, image: true } };
@@ -67,7 +67,7 @@ export const createProject = async (req, res) => {
             }
         });
 
-        await invalidateWorkspaceCache(workspaceId, prisma);
+        await invalidateWorkspaceCacheForProject(project.id, prisma);
         res.json({ project: projectWithMembers, message: "Project created successfully" });
 
     } catch (error) {
@@ -122,6 +122,11 @@ export const updateProject = async (req, res) => {
         });
 
         if (Array.isArray(groupIds)) {
+            // Capture members who could see this project under its OLD group
+            // assignment before we change it, so anyone losing visibility
+            // still gets their cache cleared (not just members of the new set).
+            await invalidateWorkspaceCacheForProject(id, prisma);
+
             await prisma.projectGroup.deleteMany({ where: { projectId: id } });
             if (groupIds.length > 0) {
                 const validGroups = await prisma.group.findMany({
@@ -134,8 +139,8 @@ export const updateProject = async (req, res) => {
                 });
             }
         }
-        
-        await invalidateWorkspaceCache(workspaceId, prisma);
+
+        await invalidateWorkspaceCacheForProject(id, prisma);
         res.json({ project, message: "Project updated successfully" });
     } catch (error) {
         console.log(error);
@@ -244,7 +249,7 @@ export const addMember = async (req, res) => {
             });
         }
 
-        await invalidateWorkspaceCache(project.workspaceId, prisma);
+        await invalidateWorkspaceCacheForProject(projectId, prisma);
         res.json({ member, message: "Member added successfully" });
     } catch (error) {
         console.log(error);
@@ -275,7 +280,7 @@ export const deleteProject = async (req, res) => {
             return res.status(403).json({ message: "You don't have permission to delete this project" });
         }
 
-        await invalidateWorkspaceCache(project.workspaceId, prisma);
+        await invalidateWorkspaceCacheForProject(projectId, prisma);
         await prisma.project.delete({ where: { id: projectId } });
         res.json({ message: "Project deleted successfully" });
     } catch (error) {
