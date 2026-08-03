@@ -1,5 +1,5 @@
 import { prisma, pool } from "../configs/prisma.js";
-import cloudinary from "../configs/cloudinary.js";
+import { uploadImageToR2, deleteManyFromR2, extractKeyFromUrl } from "../configs/r2.js";
 import { sendEmailsWithProgress } from "../configs/emailQueue.js";
 
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt
@@ -41,19 +41,16 @@ export const markAttendance = async (req, res) => {
             return res.status(409).json({ message: "Attendance already marked for today" });
         }
 
-        const folder = `attendance/${sanitizeFolder(req.user?.email || req.user?.name || userId)}`;
-        const upload = await cloudinary.uploader.upload(imageBase64, {
-            folder,
-            resource_type: "image",
-            transformation: [{ quality: "auto:low" }],
-        });
+        // R2 key structure: workspace/{workspaceId}/attendance/{userFolder}/{file}
+        const keyPrefix = `workspace/${sanitizeFolder(workspaceId)}/attendance/${sanitizeFolder(req.user?.email || req.user?.name || userId)}`;
+        const upload = await uploadImageToR2(imageBase64, keyPrefix);
 
         const attendance = await prisma.attendance.create({
             data: {
                 workspaceId,
                 userId,
                 date: start,
-                imageUrl: upload.secure_url,
+                imageUrl: upload.url,
             },
         });
 
@@ -290,7 +287,7 @@ export const getMyAttendanceStatus = async (req, res) => {
 };
 
 // DELETE /api/attendance/batch — bulk-deletes the photos for a date range
-// (frees Cloudinary storage) but keeps the Attendance rows, so historical
+// (frees R2 storage) but keeps the Attendance rows, so historical
 // present/absent status is unaffected by cleaning up old images.
 export const deleteAttendanceByDates = async (req, res) => {
     try {
@@ -309,25 +306,9 @@ export const deleteAttendanceByDates = async (req, res) => {
             select: { imageUrl: true },
         });
 
-        const extractPublicId = (url = "") => {
-            try {
-                const parts = url.split("/upload/");
-                if (parts.length < 2) return null;
-                const tail = parts[1].split("?")[0];
-                const withoutVersion = tail.replace(/^v\d+\//, "");
-                return withoutVersion.replace(/\.[^/.]+$/, "");
-            } catch {
-                return null;
-            }
-        };
-
-        const publicIds = records.map((r) => extractPublicId(r.imageUrl)).filter(Boolean);
-        if (publicIds.length > 0) {
-            const chunkSize = 100;
-            for (let i = 0; i < publicIds.length; i += chunkSize) {
-                const chunk = publicIds.slice(i, i + chunkSize);
-                await cloudinary.api.delete_resources(chunk);
-            }
+        const keys = records.map((r) => extractKeyFromUrl(r.imageUrl)).filter(Boolean);
+        if (keys.length > 0) {
+            await deleteManyFromR2(keys);
         }
 
         // Clear the images only — keep the Attendance rows so people already

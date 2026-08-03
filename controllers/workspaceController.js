@@ -2,7 +2,7 @@ import { prisma, pool } from "../configs/prisma.js";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import sendEmail from "../configs/nodemailer.js";
-import cloudinary from "../configs/cloudinary.js";
+import { deleteManyFromR2, extractKeyFromUrl } from "../configs/r2.js";
 import { cacheGet, cacheSet, cacheDel, invalidateWorkspaceCache } from "../configs/redis.js";
 
 // Safe user select — never exposes mobile, passwordHash, or lastLoginAt to non-admin responses
@@ -622,33 +622,17 @@ export const deleteWorkspace = async (req, res) => {
             return res.status(403).json({ message: "You don't have permission to delete this workspace" });
         }
 
-        const extractPublicId = (url = "") => {
-            try {
-                const parts = url.split("/upload/");
-                if (parts.length < 2) return null;
-                const tail = parts[1].split("?")[0];
-                const withoutVersion = tail.replace(/^v\d+\//, "");
-                return withoutVersion.replace(/\.[^/.]+$/, "");
-            } catch {
-                return null;
-            }
-        };
-
         const attendanceImages = await prisma.attendance.findMany({
             where: { workspaceId },
             select: { imageUrl: true },
         });
 
-        const publicIds = attendanceImages
-            .map((entry) => extractPublicId(entry.imageUrl))
+        const keys = attendanceImages
+            .map((entry) => extractKeyFromUrl(entry.imageUrl))
             .filter(Boolean);
 
-        if (publicIds.length > 0) {
-            const chunkSize = 100;
-            for (let i = 0; i < publicIds.length; i += chunkSize) {
-                const chunk = publicIds.slice(i, i + chunkSize);
-                await cloudinary.api.delete_resources(chunk);
-            }
+        if (keys.length > 0) {
+            await deleteManyFromR2(keys);
         }
 
         // Invalidate before delete so member list is still queryable

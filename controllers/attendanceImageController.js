@@ -1,5 +1,5 @@
 import { prisma } from "../configs/prisma.js";
-import cloudinary from "../configs/cloudinary.js";
+import { deleteFromR2, deleteManyFromR2, extractKeyFromUrl, listR2Objects, getPublicUrl } from "../configs/r2.js";
 
 const ensureAdmin = (req, res) => {
     if (req.user?.role !== "ADMIN") {
@@ -7,18 +7,6 @@ const ensureAdmin = (req, res) => {
         return false;
     }
     return true;
-};
-
-const extractPublicId = (url = "") => {
-    try {
-        const parts = url.split("/upload/");
-        if (parts.length < 2) return null;
-        const tail = parts[1].split("?")[0];
-        const withoutVersion = tail.replace(/^v\d+\//, "");
-        return withoutVersion.replace(/\.[^/.]+$/, "");
-    } catch {
-        return null;
-    }
 };
 
 // GET /api/attendance-images?days=7|30|90|all
@@ -63,7 +51,7 @@ export const listAttendanceImages = async (req, res) => {
             grouped[wid].dates[dateStr].push({
                 id: r.id,
                 imageUrl: r.imageUrl,
-                publicId: extractPublicId(r.imageUrl),
+                publicId: extractKeyFromUrl(r.imageUrl),
                 date: r.date,
                 user: r.user,
             });
@@ -94,11 +82,8 @@ export const bulkDeleteAttendanceImages = async (req, res) => {
             select: { id: true, imageUrl: true },
         });
 
-        const publicIds = records.map((r) => extractPublicId(r.imageUrl)).filter(Boolean);
-        const chunkSize = 100;
-        for (let i = 0; i < publicIds.length; i += chunkSize) {
-            await cloudinary.api.delete_resources(publicIds.slice(i, i + chunkSize)).catch(() => {});
-        }
+        const keys = records.map((r) => extractKeyFromUrl(r.imageUrl)).filter(Boolean);
+        await deleteManyFromR2(keys).catch(() => {});
 
         await prisma.attendance.updateMany({ where: { id: { in: ids } }, data: { imageUrl: "" } });
         res.json({ message: "Image deleted, attendance kept", count: records.length });
@@ -108,8 +93,8 @@ export const bulkDeleteAttendanceImages = async (req, res) => {
     }
 };
 
-// DELETE /api/attendance-images/:id  — delete one record's image + cloudinary
-// asset, keeping the Attendance row (and its "marked" status) intact.
+// DELETE /api/attendance-images/:id  — delete one record's image + R2
+// object, keeping the Attendance row (and its "marked" status) intact.
 export const deleteAttendanceImage = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
@@ -118,9 +103,9 @@ export const deleteAttendanceImage = async (req, res) => {
         const record = await prisma.attendance.findUnique({ where: { id }, select: { imageUrl: true } });
         if (!record) return res.status(404).json({ message: "Record not found" });
 
-        const publicId = extractPublicId(record.imageUrl);
-        if (publicId) {
-            await cloudinary.uploader.destroy(publicId).catch(() => {});
+        const key = extractKeyFromUrl(record.imageUrl);
+        if (key) {
+            await deleteFromR2(key).catch(() => {});
         }
 
         await prisma.attendance.update({ where: { id }, data: { imageUrl: "" } });
@@ -132,44 +117,30 @@ export const deleteAttendanceImage = async (req, res) => {
 };
 
 // GET /api/attendance-images/orphaned
-// Scans the `attendance/` Cloudinary folder and finds public_ids with no DB record.
+// Scans the `workspace/` R2 prefix and finds object keys with no DB record.
 export const listOrphanedImages = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
 
-        // Fetch all DB image URLs → build a Set of known publicIds
+        // Fetch all DB image URLs → build a Set of known keys
         // (cleared records have no imageUrl, so they're naturally excluded)
         const dbRecords = await prisma.attendance.findMany({ where: { imageUrl: { not: "" } }, select: { imageUrl: true } });
-        const knownIds = new Set(dbRecords.map((r) => extractPublicId(r.imageUrl)).filter(Boolean));
+        const knownKeys = new Set(dbRecords.map((r) => extractKeyFromUrl(r.imageUrl)).filter(Boolean));
 
-        // Fetch all resources from Cloudinary under attendance/ folder (paginate with next_cursor)
-        const cloudinaryResources = [];
-        let nextCursor = null;
+        // Fetch all objects from R2 under the workspace/ prefix (paginated internally)
+        const r2Objects = await listR2Objects("workspace/");
 
-        do {
-            const params = {
-                type: "upload",
-                prefix: "attendance/",
-                max_results: 500,
-            };
-            if (nextCursor) params.next_cursor = nextCursor;
-
-            const result = await cloudinary.api.resources(params);
-            cloudinaryResources.push(...(result.resources || []));
-            nextCursor = result.next_cursor || null;
-        } while (nextCursor);
-
-        const orphaned = cloudinaryResources
-            .filter((r) => !knownIds.has(r.public_id))
-            .map((r) => ({
-                publicId: r.public_id,
-                url: r.secure_url,
-                createdAt: r.created_at,
-                bytes: r.bytes,
-                folder: r.folder || r.asset_folder || r.public_id.split("/").slice(0, -1).join("/"),
+        const orphaned = r2Objects
+            .filter((o) => !knownKeys.has(o.Key))
+            .map((o) => ({
+                publicId: o.Key,
+                url: getPublicUrl(o.Key),
+                createdAt: o.LastModified,
+                bytes: o.Size,
+                folder: o.Key.split("/").slice(0, -1).join("/"),
             }));
 
-        res.json({ orphaned, total: cloudinaryResources.length, orphanedCount: orphaned.length });
+        res.json({ orphaned, total: r2Objects.length, orphanedCount: orphaned.length });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
@@ -177,7 +148,7 @@ export const listOrphanedImages = async (req, res) => {
 };
 
 // DELETE /api/attendance-images/orphaned/purge
-// body: { publicIds: string[] }   — deletes given publicIds from Cloudinary only (no DB record)
+// body: { publicIds: string[] }   — deletes given R2 keys only (no DB record)
 export const purgeOrphanedImages = async (req, res) => {
     try {
         if (!ensureAdmin(req, res)) return;
@@ -187,15 +158,9 @@ export const purgeOrphanedImages = async (req, res) => {
             return res.status(400).json({ message: "publicIds array is required" });
         }
 
-        const chunkSize = 100;
-        let deleted = 0;
-        for (let i = 0; i < publicIds.length; i += chunkSize) {
-            const chunk = publicIds.slice(i, i + chunkSize);
-            await cloudinary.api.delete_resources(chunk);
-            deleted += chunk.length;
-        }
+        await deleteManyFromR2(publicIds);
 
-        res.json({ message: "Purged", deleted });
+        res.json({ message: "Purged", deleted: publicIds.length });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
