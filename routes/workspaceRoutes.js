@@ -2,6 +2,7 @@ import express from "express";
 import {
     createWorkspace,
     getUserWorkspaces,
+    getWorkspaceById,
     importProjects,
     inviteWorkspaceMember,
     inviteWorkspaceMembersBulk,
@@ -14,6 +15,7 @@ import {
 const workspaceRouter = express.Router();
 
 workspaceRouter.get("/", getUserWorkspaces);
+workspaceRouter.get("/:workspaceId", getWorkspaceById);
 workspaceRouter.post("/", createWorkspace);
 workspaceRouter.post("/:workspaceId/invite", inviteWorkspaceMember);
 workspaceRouter.post("/:workspaceId/invite-bulk", inviteWorkspaceMembersBulk);

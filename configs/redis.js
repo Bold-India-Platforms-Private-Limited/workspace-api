@@ -68,6 +68,8 @@ export async function invalidateWorkspaceCache(workspaceId, prisma) {
             select: { userId: true },
         });
         const keys = members.map((m) => `ws:user:${m.userId}`);
+        // Also drop the workspace's full detail blob (getWorkspaceById)
+        keys.push(`ws:detail:${workspaceId}`);
         await cacheDel(keys);
     } catch (err) {
         console.error("[Redis] Invalidation error:", err.message);
@@ -102,7 +104,10 @@ export async function invalidateWorkspaceCacheForProject(projectId, prisma) {
         const affected = new Set(admins.map((m) => m.userId));
         project.groups.forEach((pg) => pg.group.members.forEach((m) => affected.add(m.userId)));
 
-        await cacheDel(Array.from(affected).map((userId) => `ws:user:${userId}`));
+        const keys = Array.from(affected).map((userId) => `ws:user:${userId}`);
+        // The project/task change is inside this workspace's detail graph
+        keys.push(`ws:detail:${project.workspaceId}`);
+        await cacheDel(keys);
     } catch (err) {
         console.error("[Redis] Scoped invalidation error:", err.message);
     }

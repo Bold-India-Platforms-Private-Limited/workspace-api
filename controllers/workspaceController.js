@@ -39,13 +39,63 @@ function scopeWorkspaceForMember(workspace, userId) {
     };
 }
 
-// Get all workspaces for user
+// The heavy project/task/group graph for a single workspace. Kept in one
+// place so getWorkspaceById and createWorkspace stay in sync.
+const workspaceDetailInclude = {
+    members: { include: { user: safeUser } },
+    // group.members is only ever read as `m.userId` by the frontend
+    // (group visibility filtering) — the group roster UI fetches its own
+    // /api/groups. Keep this to bare ids so a workspace with hundreds of
+    // groups doesn't ship hundreds of user blobs.
+    groups: { include: { members: { select: { userId: true } } } },
+    projects: {
+        include: {
+            tasks: {
+                include: {
+                    assignees: { include: { user: safeUser } },
+                    groups: { select: { groupId: true } }
+                }
+            },
+            members: { include: { user: safeUser } },
+            groups: {
+                include: {
+                    group: {
+                        select: {
+                            id: true,
+                            members: { select: { userId: true } }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    owner: safeUser
+};
+
+// Lightweight shape for the workspace list — id/name/image + a bare membership
+// roster (userId/role only, NO user join). NO projects / tasks / groups, and
+// NO member profile blobs: the full graph (members-with-user included) is
+// fetched one workspace at a time via getWorkspaceById.
+const workspaceListSelect = {
+    id: true,
+    name: true,
+    slug: true,
+    description: true,
+    settings: true,
+    image_url: true,
+    ownerId: true,
+    createdAt: true,
+    updatedAt: true,
+    members: { select: { userId: true, role: true } },
+    owner: safeUser,
+};
+
+// Get all workspaces for user (lightweight list — no project/task graph)
 export const getUserWorkspaces = async (req, res) => {
     try {
         const userId = req.user?.id;
-        const role = req.user?.role;
 
-        // Serve from Redis when available — avoids the heavy DB join on every request
+        // Serve from Redis when available
         const cacheKey = `ws:user:${userId}`;
         const cached = await cacheGet(cacheKey);
         if (cached) {
@@ -60,43 +110,58 @@ export const getUserWorkspaces = async (req, res) => {
             where: {
                 members: { some: { userId: userId } }
             },
-            include: {
-                members: { include: { user: safeUser } },
-                groups: { include: { members: { include: { user: safeUser } } } },
-                projects: {
-                    include: {
-                        tasks: {
-                            include: {
-                                assignees: { include: { user: safeUser } },
-                                groups: { select: { groupId: true } }
-                            }
-                        },
-                        members: { include: { user: safeUser } },
-                        groups: {
-                            include: {
-                                group: {
-                                    select: {
-                                        id: true,
-                                        members: { select: { userId: true } }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                owner: safeUser
-            }
+            select: workspaceListSelect,
+            orderBy: { createdAt: "asc" },
         });
+
+        // Cache before responding so concurrent requests also benefit
+        await cacheSet(cacheKey, workspaces);
+        res.json({ workspaces });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.code || error.message });
+    }
+};
+
+// Get a single workspace with its full project/task/group graph.
+// This is the only place that materialises the heavy join, and only ever
+// for one workspace — never the whole DB.
+export const getWorkspaceById = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const role = req.user?.role;
+        const { workspaceId } = req.params;
+
+        // Full unscoped graph is cached per workspace; member scoping is
+        // applied after the cache read so one blob serves everyone.
+        const cacheKey = `ws:detail:${workspaceId}`;
+        let workspace = await cacheGet(cacheKey);
+
+        if (!workspace) {
+            workspace = await prisma.workspace.findUnique({
+                where: { id: workspaceId },
+                include: workspaceDetailInclude,
+            });
+
+            if (!workspace) {
+                return res.status(404).json({ message: "Workspace not found" });
+            }
+
+            await cacheSet(cacheKey, workspace);
+        }
+
+        const isMember = (workspace.members || []).some((m) => m.userId === userId);
+        if (role !== "ADMIN" && !isMember) {
+            return res.status(403).json({ message: "You don't have access to this workspace" });
+        }
 
         // Non-admins only ever see their own group(s) + groupmates + those
         // groups' projects. Admins keep the full workspace graph, unchanged.
         const scoped = role === "ADMIN"
-            ? workspaces
-            : workspaces.map((ws) => scopeWorkspaceForMember(ws, userId));
+            ? workspace
+            : scopeWorkspaceForMember(workspace, userId);
 
-        // Cache before responding so concurrent requests also benefit
-        await cacheSet(cacheKey, scoped);
-        res.json({ workspaces: scoped });
+        res.json({ workspace: scoped });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
@@ -155,22 +220,16 @@ export const createWorkspace = async (req, res) => {
 
         const workspaceWithMembers = await prisma.workspace.findUnique({
             where: { id: workspace.id },
-            include: {
-                members: { include: { user: safeUser } },
-                projects: {
-                    include: {
-                        tasks: { include: { assignees: { include: { user: safeUser } }, groups: { select: { groupId: true } } } },
-                        members: { include: { user: safeUser } },
-                        groups: { include: { group: { select: { id: true, members: { select: { userId: true } } } } } }
-                    },
-                },
-                owner: true,
-            },
+            select: workspaceListSelect,
         });
+
+        // A brand-new workspace has no projects/groups yet — give the client
+        // the same shape a detail fetch would so it can render immediately.
+        const workspaceForClient = { ...workspaceWithMembers, projects: [], groups: [] };
 
         // New workspace — invalidate the creator's cached list
         await cacheDel([`ws:user:${userId}`]);
-        res.json({ workspace: workspaceWithMembers, message: "Workspace created successfully" });
+        res.json({ workspace: workspaceForClient, message: "Workspace created successfully" });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.code || error.message });
