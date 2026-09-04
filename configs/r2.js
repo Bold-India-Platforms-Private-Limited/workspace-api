@@ -52,6 +52,18 @@ export const uploadImageToR2 = async (dataUri, keyPrefix) => {
     return { key, url: `${PUBLIC_URL}/${key}` };
 };
 
+// Uploads a raw buffer (any file type) under `key` and returns { key, url }.
+// Used for dataset-storage file uploads (multer memoryStorage → R2).
+export const uploadBufferToR2 = async (buffer, contentType, key) => {
+    await r2.send(new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType || "application/octet-stream",
+    }));
+    return { key, url: `${PUBLIC_URL}/${key}` };
+};
+
 export const getPublicUrl = (key) => `${PUBLIC_URL}/${key}`;
 
 // Recovers the object key from a public URL previously returned by uploadImageToR2.

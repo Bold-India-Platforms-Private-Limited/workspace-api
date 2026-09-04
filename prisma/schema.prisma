@@ -61,6 +61,8 @@ model User {
     ProjectMember     ProjectMember[]
     groupMemberships  GroupMember[]
     addedDocuments    ProjectDocument[]   @relation("DocumentAddedBy")
+    datasetFolders    DatasetFolder[]     @relation("DatasetFolderCreator")
+    datasetFiles      DatasetFile[]       @relation("DatasetFileUploader")
     ndaSignatures     NdaSignature[]      @relation("NdaSigner")
     groupMessages   GroupMessage[]
     attendances     Attendance[]
@@ -84,6 +86,7 @@ model Workspace {
     members  WorkspaceMember[]
     projects Project[]
     groups   Group[]
+    datasetFolders DatasetFolder[]
     notifications Notification[]
     notices       Notice[]
     attendances   Attendance[]
@@ -165,14 +168,53 @@ model ProjectDocument {
     id          String   @id @default(uuid())
     projectId   String
     title       String
-    driveLink   String
+    kind        String   @default("link")   // "link" (driveLink) | "dataset" (datasetFolderId)
+    driveLink   String   @default("")
+    datasetFolderId String?
     description String?
     tags        String[] @default([])
     addedById   String
     createdAt   DateTime @default(now())
 
-    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-    addedBy   User    @relation("DocumentAddedBy", fields: [addedById], references: [id], onDelete: Cascade)
+    project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    addedBy       User           @relation("DocumentAddedBy", fields: [addedById], references: [id], onDelete: Cascade)
+    datasetFolder DatasetFolder? @relation(fields: [datasetFolderId], references: [id], onDelete: Cascade)
+}
+
+// Global pool of dataset folders — shared across all workspaces. Admins attach
+// folders to individual projects via ProjectDocument (kind = "dataset").
+model DatasetFolder {
+    id          String   @id @default(uuid())
+    workspaceId String?
+    name        String
+    description String?
+    createdById String
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    workspace Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+    createdBy User              @relation("DatasetFolderCreator", fields: [createdById], references: [id], onDelete: Cascade)
+    files     DatasetFile[]
+    documents ProjectDocument[]
+
+    @@index([createdAt(sort: Desc)])
+}
+
+model DatasetFile {
+    id           String   @id @default(uuid())
+    folderId     String
+    name         String
+    key          String
+    url          String
+    size         Int      @default(0)
+    contentType  String   @default("application/octet-stream")
+    uploadedById String
+    createdAt    DateTime @default(now())
+
+    folder     DatasetFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+    uploadedBy User          @relation("DatasetFileUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+
+    @@index([folderId, createdAt(sort: Desc)])
 }
 
 model ProjectMember {

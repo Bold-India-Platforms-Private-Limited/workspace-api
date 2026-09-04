@@ -66,6 +66,18 @@ const workspaceDetailInclude = {
                         }
                     }
                 }
+            },
+            // Lightweight document list — powers the count badge on the Documents
+            // tab and the Datasets section on the Dashboard. datasetFolder is only
+            // populated for kind = "dataset".
+            documents: {
+                select: {
+                    id: true,
+                    kind: true,
+                    title: true,
+                    createdAt: true,
+                    datasetFolder: { select: { id: true, name: true, _count: { select: { files: true } } } },
+                },
             }
         }
     },
